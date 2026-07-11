@@ -11,9 +11,16 @@ export type GraphData = {
   adj: Array<Array<[number, number, string, string]>>;
 };
 
+export type RouteSegment = {
+  from: Coordinate;
+  to: Coordinate;
+  kind: string;
+};
+
 export type RouteResult = {
   found: boolean;
   path: Coordinate[];
+  segments: RouteSegment[];
   distanceMeters: number;
   connectorShare: number;
   usesFallback: boolean;
@@ -194,11 +201,12 @@ function reconstructPath(
   nodePath.reverse();
 
   if (nodePath[0] !== startIdx) {
-    return { found: false, path: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
+    return { found: false, path: [], segments: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
   }
 
   let totalDistance = 0;
   let connectorDistance = 0;
+  const segments: RouteSegment[] = [];
 
   for (let i = 1; i < nodePath.length; i += 1) {
     const from = nodePath[i - 1];
@@ -210,6 +218,7 @@ function reconstructPath(
     if (kind === "park_connector" || kind === "park_path") {
       connectorDistance += distance;
     }
+    segments.push({ from: nodes[from], to: nodes[to], kind });
   }
 
   const path = nodePath.map((idx) => nodes[idx]);
@@ -218,6 +227,7 @@ function reconstructPath(
   return {
     found: true,
     path,
+    segments,
     distanceMeters: totalDistance,
     connectorShare,
     usesFallback: connectorShare < 0.999,
@@ -235,13 +245,13 @@ export function computeRoute(
   const endNode = findNearestNode(graph, end);
 
   if (startNode.index < 0 || endNode.index < 0) {
-    return { found: false, path: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
+    return { found: false, path: [], segments: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
   }
 
   const { dist, prev } = dijkstra(graph.nodes, graph.adj, startNode.index, endNode.index);
 
   if (!Number.isFinite(dist[endNode.index])) {
-    return { found: false, path: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
+    return { found: false, path: [], segments: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
   }
 
   return reconstructPath(graph.nodes, graph.adj, prev, startNode.index, endNode.index);
@@ -419,7 +429,7 @@ export function computeRouteWithFallback(
   const endNode = findNearestNode(pcnGraph, end);
 
   if (startNode.index < 0 || endNode.index < 0) {
-    return { found: false, path: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
+    return { found: false, path: [], segments: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
   }
 
   const { dist: mergedDist, prev: mergedPrev } = dijkstra(
@@ -430,7 +440,7 @@ export function computeRouteWithFallback(
   );
 
   if (!Number.isFinite(mergedDist[endNode.index])) {
-    return { found: false, path: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
+    return { found: false, path: [], segments: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
   }
 
   return reconstructPath(mergedNodes, mergedAdj, mergedPrev, startNode.index, endNode.index);

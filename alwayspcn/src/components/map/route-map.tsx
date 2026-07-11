@@ -4,6 +4,7 @@ import "leaflet/dist/leaflet.css";
 
 import { CircleMarker, GeoJSON, MapContainer, Polyline, TileLayer, useMapEvents } from "react-leaflet";
 import type { GeoJsonCollection } from "@/lib/graph-to-geojson";
+import type { RouteSegment } from "@/lib/routing";
 
 type Coordinate = [number, number];
 
@@ -33,8 +34,20 @@ const PCN_STYLE: Record<string, { color: string; weight: number; opacity: number
   cycling_path:   { color: "#4a90d9", weight: 2, opacity: 0.75 },
 };
 
+// Color for route segments that travel off the PCN (roads, bridges, etc.)
+const ROUTE_OFF_PCN: { color: string; weight: number; opacity: number } = {
+  color: "#94a3b8",
+  weight: 5,
+  opacity: 0.9,
+};
+
+function routeSegmentStyle(kind: string): { color: string; weight: number; opacity: number } {
+  if (PCN_STYLE[kind]) return { ...PCN_STYLE[kind], weight: 5 };
+  return ROUTE_OFF_PCN;
+}
+
 type RouteMapProps = {
-  route: Coordinate[];
+  segments: RouteSegment[];
   start: Coordinate | null;
   end: Coordinate | null;
   onMapPick: (point: Coordinate) => void;
@@ -52,14 +65,26 @@ function ClickCapture({ onMapPick }: { onMapPick: (point: Coordinate) => void })
 }
 
 export function RouteMap({
-  route,
+  segments,
   start,
   end,
   onMapPick,
   roadsGeojson,
   pcnGeojson,
 }: RouteMapProps) {
-  const routeLatLng = route.map(([lng, lat]) => [lat, lng] as [number, number]);
+  // Group consecutive same-kind segments into polylines
+  type SegGroup = { kind: string; positions: [number, number][] };
+  const segGroups: SegGroup[] = [];
+  for (const seg of segments) {
+    const fromLL: [number, number] = [seg.from[1], seg.from[0]];
+    const toLL: [number, number] = [seg.to[1], seg.to[0]];
+    const last = segGroups[segGroups.length - 1];
+    if (last && last.kind === seg.kind) {
+      last.positions.push(toLL);
+    } else {
+      segGroups.push({ kind: seg.kind, positions: [fromLL, toLL] });
+    }
+  }
 
   return (
     <MapContainer center={[1.3521, 103.8198]} zoom={12} className="h-full w-full rounded-2xl">
@@ -95,13 +120,14 @@ export function RouteMap({
         />
       ) : null}
 
-      {/* Computed route — rendered above overlays */}
-      {routeLatLng.length > 1 ? (
+      {/* Computed route — coloured per segment kind, rendered above overlays */}
+      {segGroups.map((group, i) => (
         <Polyline
-          positions={routeLatLng}
-          pathOptions={{ color: "#00a7d4", weight: 6, opacity: 0.95 }}
+          key={`route-seg-${i}`}
+          positions={group.positions}
+          pathOptions={routeSegmentStyle(group.kind)}
         />
-      ) : null}
+      ))}
 
       {start ? (
         <CircleMarker

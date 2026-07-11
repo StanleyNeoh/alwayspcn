@@ -2,9 +2,10 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Moon, Navigation2, Search, Sun } from "lucide-react";
+import { Layers, Loader2, Moon, Search, Sun } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LocationCombobox } from "@/components/ui/location-combobox";
 import { validateGraphData } from "@/lib/graph-validation";
@@ -50,6 +51,8 @@ export default function Home() {
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [roadsGeojson, setRoadsGeojson] = useState<RoadsGeoJson | null>(null);
   const [pcnGeojson, setPcnGeojson] = useState<GeoJsonCollection | null>(null);
+  const [showPcnOverlay, setShowPcnOverlay] = useState(false);
+  const [showRoadsOverlay, setShowRoadsOverlay] = useState(false);
   const [isLoadingRoads, setIsLoadingRoads] = useState(false);
   const roadGraphRef = useRef<ReturnType<typeof buildRoadGraph> | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
@@ -179,7 +182,7 @@ export default function Home() {
 
   const loadGraph = async () => {
     setMessage("Loading PCN network…");
-    const response = await fetch("/data/network.json");
+    const response = await fetch("/api/data/network");
     if (!response.ok) {
       setMessage("Unable to load /data/network.json. Run npm run build:network first.");
       return;
@@ -207,7 +210,7 @@ export default function Home() {
     // Fetch pre-built Singapore road GeoJSON in the background
     setIsLoadingRoads(true);
     try {
-      const roadsResponse = await fetch("/data/roads.json");
+      const roadsResponse = await fetch("/api/data/roads");
       if (!roadsResponse.ok) {
         setMessage(
           `PCN network ready (${nodeCount} nodes). Road overlay unavailable — run npm run build:roads.`
@@ -269,6 +272,10 @@ export default function Home() {
     }
   };
 
+  // Auto-load the network on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadGraph(); }, []);
+
   const activeRoute = graph && start && end ? route : null;
 
   return (
@@ -283,9 +290,7 @@ export default function Home() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge className="bg-accent text-accent-foreground">PCN Priority Routing</Badge>
-            {roadsGeojson ? (
-              <Badge variant="outline">Roads overlay active</Badge>
-            ) : null}
+
             <button
               type="button"
               aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
@@ -301,26 +306,42 @@ export default function Home() {
       <section className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[370px_minmax(0,1fr)]">
         <Card className="border-border/80 bg-card/90 shadow-md backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="font-heading text-xl">Route Controls</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="font-heading text-xl">Route Controls</CardTitle>
+              <div className="flex items-center gap-1.5">
+                {pcnGeojson ? (
+                  <Button
+                    variant={showPcnOverlay ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setShowPcnOverlay((v) => !v)}
+                    aria-pressed={showPcnOverlay}
+                    title={showPcnOverlay ? "Hide PCN overlay" : "Show PCN overlay"}
+                    className="h-8 gap-1.5 px-2 text-xs"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                    PCN
+                  </Button>
+                ) : null}
+                {roadsGeojson ? (
+                  <Button
+                    variant={showRoadsOverlay ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setShowRoadsOverlay((v) => !v)}
+                    aria-pressed={showRoadsOverlay}
+                    title={showRoadsOverlay ? "Hide roads overlay" : "Show roads overlay"}
+                    className="h-8 gap-1.5 px-2 text-xs"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                    Roads
+                  </Button>
+                ) : null}
+              </div>
+            </div>
             <CardDescription>
               Enter a place name, street address, or lat,lng coordinates.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <button
-              className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-              type="button"
-              onClick={loadGraph}
-              disabled={isLoadingRoads}
-            >
-              {isLoadingRoads ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Navigation2 className="mr-2 h-4 w-4" />
-              )}
-              {isLoadingRoads ? "Loading roads…" : "Load Network"}
-            </button>
-
             <LocationCombobox
               id="start"
               label="Start — place name or lat,lng"
@@ -427,7 +448,7 @@ export default function Home() {
                       <span className="inline-block h-1.5 w-5 rounded bg-[#4a90d9]" />Cycling Path
                     </span>
                     <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-5 rounded bg-[#00a7d4]" />Active Route
+                      <span className="inline-block h-2 w-5 rounded bg-[#94a3b8]" />Road (off-PCN)
                     </span>
                   </div>
                 ) : null}
@@ -457,12 +478,12 @@ export default function Home() {
 
         <div className="min-h-[62vh] overflow-hidden rounded-2xl border border-border/80 bg-card/80 shadow-md">
           <RouteMap
-            route={activeRoute?.found ? activeRoute.path : []}
+            segments={activeRoute?.found ? activeRoute.segments : []}
             start={start}
             end={end}
             onMapPick={onMapPick}
-            roadsGeojson={roadsGeojson}
-            pcnGeojson={pcnGeojson}
+            roadsGeojson={showRoadsOverlay ? roadsGeojson : null}
+            pcnGeojson={showPcnOverlay ? pcnGeojson : null}
           />
         </div>
       </section>
