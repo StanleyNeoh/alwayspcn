@@ -5,6 +5,8 @@ export function useAdvancedSettings() {
   const [clusterEnabled, setClusterEnabled] = useState(false);
   const [clusterThreshold, setClusterThreshold] = useState(10);
   const [routeWeights, setRouteWeights] = useState<RouteWeights>(DEFAULT_ROUTE_WEIGHTS);
+  /** null = disabled; 0-359 = override heading used to test map rotation without real GPS. */
+  const [testHeading, setTestHeading] = useState<number | null>(null);
 
   // Restore from localStorage on mount
   useEffect(() => {
@@ -25,7 +27,7 @@ export function useAdvancedSettings() {
     }
   }, []);
 
-  // Persist on change
+  // Persist on change (testHeading is intentionally not persisted – it's transient)
   useEffect(() => {
     localStorage.setItem(
       "alwayspcn_adv",
@@ -40,5 +42,7 @@ export function useAdvancedSettings() {
     setClusterThreshold,
     routeWeights,
     setRouteWeights,
+    testHeading,
+    setTestHeading,
   };
 }

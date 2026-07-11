@@ -78,9 +78,9 @@ export default function Home() {
           pcnGeojson={displayPcnGeojson}
           isDark={isDark}
           toggleDark={toggleDark}
-          navMode={navigation.navMode}
+          navMode={navigation.navMode || advSettings.testHeading !== null}
           navPosition={navigation.navPosition}
-          navHeading={navigation.navHeading}
+          navHeading={advSettings.testHeading ?? navigation.navHeading}
         />
       </div>
 
@@ -153,6 +153,8 @@ export default function Home() {
             advSettings.setRouteWeights((prev) => ({ ...prev, [key]: value }))
           }
           onRouteWeightsReset={() => advSettings.setRouteWeights(DEFAULT_ROUTE_WEIGHTS)}
+          testHeading={advSettings.testHeading}
+          onTestHeadingChange={advSettings.setTestHeading}
         />
       </DraggableCard>
 

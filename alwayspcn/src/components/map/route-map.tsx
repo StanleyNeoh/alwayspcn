@@ -70,9 +70,13 @@ function NavigationDragFix({ heading }: { heading: number }) {
       lastX = e.clientX;
       lastY = e.clientY;
       // Counter-rotate the delta to compensate for the CSS map rotation.
+      // The map container is CSS-rotated by -heading (CCW by heading degrees).
+      // To undo that, rotate the screen-space drag CCW by heading (standard
+      // CCW rotation matrix), then pass the result to Leaflet's panBy which
+      // operates in the un-rotated DOM space.
       const θ = (headingRef.current * Math.PI) / 180;
-      const rdx = dx * Math.cos(θ) + dy * Math.sin(θ);
-      const rdy = -dx * Math.sin(θ) + dy * Math.cos(θ);
+      const rdx = dx * Math.cos(θ) - dy * Math.sin(θ);
+      const rdy = dx * Math.sin(θ) + dy * Math.cos(θ);
       map.panBy([-rdx, -rdy], { animate: false });
     };
 

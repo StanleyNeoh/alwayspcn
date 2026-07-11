@@ -32,6 +32,10 @@ interface AdvancedPanelProps {
   routeWeights: RouteWeights;
   onRouteWeightsChange: (key: keyof RouteWeights, value: number) => void;
   onRouteWeightsReset: () => void;
+
+  // Testing
+  testHeading: number | null;
+  onTestHeadingChange: (v: number | null) => void;
 }
 
 export function AdvancedPanel({
@@ -51,6 +55,8 @@ export function AdvancedPanel({
   routeWeights,
   onRouteWeightsChange,
   onRouteWeightsReset,
+  testHeading,
+  onTestHeadingChange,
 }: AdvancedPanelProps) {
   return (
     <div className="space-y-4 p-4">
@@ -179,6 +185,53 @@ export function AdvancedPanel({
         onChange={onRouteWeightsChange}
         onReset={onRouteWeightsReset}
       />
+
+      <div className="h-px bg-border/40" />
+
+      {/* Testing */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+            Testing
+          </p>
+          {testHeading !== null && (
+            <button
+              type="button"
+              onClick={() => onTestHeadingChange(null)}
+              className="rounded-lg px-2 py-0.5 text-[10px] font-medium border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Map orientation</span>
+            <span className="font-medium tabular-nums">
+              {testHeading !== null ? `${Math.round(testHeading)}°` : "off"}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={359}
+            step={1}
+            value={testHeading ?? 0}
+            onChange={(e) => onTestHeadingChange(Number(e.target.value))}
+            className="w-full accent-primary"
+          />
+          <div className="flex justify-between text-[9px] text-muted-foreground/50">
+            <span>N 0°</span>
+            <span>E 90°</span>
+            <span>S 180°</span>
+            <span>W 270°</span>
+          </div>
+          <p className="text-[10px] leading-relaxed text-muted-foreground/60">
+            Simulates device compass heading to test map rotation and drag without real GPS.
+            Overrides navigation heading when set.
+          </p>
+        </div>
+      </div>
 
     </div>
   );
