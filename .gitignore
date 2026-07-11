@@ -1,0 +1,5 @@
+agent.env
+.codemogger/
+node_modules/
+AlwaysPCN/node_modules/
+AlwaysPCN/.next/

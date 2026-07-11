@@ -1,0 +1,39 @@
+{
+  "mcpServers": {
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "firecrawl-mcp"
+      ],
+      "env": {
+        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      }
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "chrome-devtools-mcp@latest"
+      ]
+    },
+    "vercel-next-dev-tools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "vercel-next-dev-tools-mcp@latest"
+      ]
+    },
+    "codemogger": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "codemogger",
+        "mcp"
+      ]
+    }
+  }
+}
