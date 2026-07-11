@@ -22,3 +22,10 @@
 ## Phase 6: Validation
 - Run lint/typecheck/build.
 - Add utility tests where practical.
+
+## Phase 7: Roads Overlay + Geocoding
+- Fetch Singapore road network from Overpass API at build time; save to `public/data/roads.json` with 24 h staleness cache.
+- Add dual visual overlay on map: OSM road layer (highway-class colour scale) + PCN route layer (kind colour scale).
+- Add Nominatim geocoding: start/end inputs accept place names or raw lat,lng; inputs snap to resolved coordinates after geocoding.
+- Map legend panel with colour key for roads and PCN kinds.
+- Graceful degradation when `roads.json` is absent.

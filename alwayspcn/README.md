@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AlwaysPCN
 
-## Getting Started
+Park-connector-first route planner for Singapore's PCN and cycling network.
 
-First, run the development server:
+## Features
+- **PCN-priority routing** — Dijkstra with preference weights; park connectors cost 28% less than regular paths.
+- **Singapore road overlay** — OSM road network fetched from Overpass API, colour-coded by highway class.
+- **PCN visual overlay** — all park connectors, park paths, rail corridor, and cycling paths drawn on the map with distinct colours.
+- **Geocoding** — start/end inputs accept place names, street addresses, or raw `lat,lng` coordinates (resolved via Nominatim, Singapore-scoped).
+- **Web Worker routing** — route computation runs off the main thread with stale-response suppression.
+- **Map legend** — colour key for roads and PCN route kinds.
+
+## Quick Start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev   # builds network.json + roads.json, then starts Next.js dev server
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`roads.json` is cached for 24 hours; subsequent dev starts are fast.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Scripts
 
-## Learn More
+| Script | Description |
+|--------|-------------|
+| `npm run build:network` | Parse `data/doc.kml` → `public/data/network.json` |
+| `npm run build:roads` | Fetch Singapore roads from Overpass → `public/data/roads.json` (24 h cache) |
+| `npm run dev` | Runs both build scripts, then starts the Next.js dev server |
+| `npm run build` | Production build (includes both data scripts) |
+| `npm run lint` | ESLint |
 
-To learn more about Next.js, take a look at the following resources:
+## Data Sources
+- **PCN / cycling paths** — `data/doc.kml` (curated KML, `Park Connector Network` + `Cycling Path Network` layers).
+- **Singapore roads** — [OpenStreetMap](https://www.openstreetmap.org/) contributors via [Overpass API](https://overpass-api.de/). License: ODbL.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Route Preference Weights
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Kind | Factor |
+|------|--------|
+| `park_connector` | 0.72 |
+| `park_path` | 0.82 |
+| `rail_corridor` | 0.90 |
+| `cycling_path` | 1.00 |
+| `other` | 1.08 |
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+A lower factor means the edge costs less in the Dijkstra search, so the algorithm naturally prefers PCN routes.
