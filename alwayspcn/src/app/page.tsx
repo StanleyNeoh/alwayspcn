@@ -100,11 +100,28 @@ export default function Home() {
   const [clusterEnabled, setClusterEnabled] = useState(false);
   const [clusterThreshold, setClusterThreshold] = useState(10);
   const [routeWeights, setRouteWeights] = useState<RouteWeights>(DEFAULT_ROUTE_WEIGHTS);
+  const [useServerRouting, setUseServerRouting] = useState(false);
+  const [serverRouting, setServerRouting] = useState(false);
 
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   /** True when activeGraph was just set from a worker graph_ready — skip re-sending init_graph. */
   const skipWorkerInitRef = useRef(false);
+
+  /**
+   * Synchronous low-memory detection — computed once at render time (before any effects),
+   * so both the data-load effect and the worker-creation effect can gate on it without
+   * racing against a setState.
+   */
+  const lowMemoryRef = useRef(
+    typeof navigator !== "undefined" &&
+      (() => {
+        const nav = navigator as Navigator & { deviceMemory?: number };
+        return typeof nav.deviceMemory === "number"
+          ? nav.deviceMemory < 4
+          : /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+      })()
+  );
 
   const panel = useDraggable({ x: 16, y: 16 });
   const adv = useDraggable({ x: 16, y: 490 });
@@ -116,6 +133,11 @@ export default function Home() {
       : window.matchMedia("(prefers-color-scheme: dark)").matches;
     setIsDark(prefersDark);
     document.documentElement.classList.toggle("dark", prefersDark);
+
+    // Detect low-memory or mobile device — use server-side routing to avoid OOM.
+    // lowMemoryRef is computed synchronously at render time so this detection never
+    // races with other effects that also run on mount.
+    const lowMemory = lowMemoryRef.current;
 
     // Restore advanced settings
     try {
@@ -133,7 +155,17 @@ export default function Home() {
     } catch {
       // ignore malformed storage
     }
-  }, []);
+
+    if (lowMemory) {
+      setUseServerRouting(true);
+      setMessage("Set two points to route (server routing).");
+      return; // ← skip data loading entirely on this device
+    }
+
+    // Capable device — start loading PCN network data
+    void loadGraph();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Persist advanced settings whenever they change
   useEffect(() => {
@@ -151,6 +183,8 @@ export default function Home() {
   };
 
   useEffect(() => {
+    // lowMemoryRef is set synchronously at render time — no race with useServerRouting state.
+    if (lowMemoryRef.current) return;
     try {
       const worker = new Worker(new URL("../workers/route-worker.ts", import.meta.url), {
         type: "module",
@@ -177,7 +211,7 @@ export default function Home() {
       workerRef.current = null;
       return undefined;
     }
-  }, []);
+  }, []); // [] — runs once; lowMemoryRef gates entry without a state-update race
 
   // Cache the active graph in the worker once on change so compute messages
   // don't need to clone the full graph (~2 MB) on every route request.
@@ -193,7 +227,7 @@ export default function Home() {
   }, [activeGraph]);
 
   useEffect(() => {
-    if (!activeGraph || !start || !end) {
+    if (useServerRouting || !activeGraph || !start || !end) {
       return;
     }
 
@@ -346,13 +380,35 @@ export default function Home() {
     }
   };
 
-  // Auto-load the network on mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { void loadGraph(); }, []);
-
-  // Auto-load roads once the PCN graph is ready
+  // Auto-load roads once the PCN graph is ready.
+  // Safe for low-memory devices: loadGraph() is never called there so graph stays
+  // null and this effect never fires.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (graph) void loadRoads(); }, [graph]);
+
+  // Server-side routing path: fetch /api/route when start+end change on low-memory devices
+  useEffect(() => {
+    if (!useServerRouting || !start || !end) return;
+    setRoute(null);
+    setServerRouting(true);
+    const abortCtrl = new AbortController();
+    const params = new URLSearchParams({
+      startLat: String(start[1]),
+      startLng: String(start[0]),
+      endLat: String(end[1]),
+      endLng: String(end[0]),
+      weights: JSON.stringify(routeWeights),
+    });
+    fetch(`/api/route?${params.toString()}`, { signal: abortCtrl.signal })
+      .then((res) => res.json())
+      .then((result: RouteResult) => { setRoute(result); setMessage("Route ready."); })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setMessage("Server routing failed.");
+      })
+      .finally(() => { setServerRouting(false); });
+    return () => { abortCtrl.abort(); };
+  }, [useServerRouting, start, end, routeWeights]);
 
   const rawRoadNodeCount = useMemo(() => {
     if (!roadsGeojson) return 0;
@@ -550,6 +606,12 @@ export default function Home() {
 
             {/* Status + route stats */}
             <div className="rounded-xl border border-border/40 bg-muted/25 px-3 py-2.5 text-xs">
+              {useServerRouting && (
+                <p className="mb-1.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground/70">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  {serverRouting ? "Server routing…" : "Server routing"}
+                </p>
+              )}
               <p className="leading-relaxed text-muted-foreground">{message}</p>
               {activeRoute?.found ? (
                 <div className="mt-2 space-y-0.5 font-medium text-foreground">
