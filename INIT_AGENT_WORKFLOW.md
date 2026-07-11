@@ -62,6 +62,7 @@ When instructed to initialize, run this workflow in order:
 16. Run security review if external skill is available
 17. Create changelog
 18. Update project context and commands
+19. Use subagents + git worktrees for parallelizable slices when beneficial
 
 ---
 
@@ -486,7 +487,91 @@ If design info is insufficient and materially blocks UX decisions, ask user.
 
 ---
 
-## 13) Validation
+## 13) Subagents + Git Worktrees (Parallelism)
+
+Use subagents with isolated git worktrees when work can be parallelized safely.
+
+### When to Use
+
+Use this pattern for:
+
+- Independent features that do not touch the same files
+- Parallel bugfixes across separate modules
+- Documentation, testing, and implementation tracks running together
+- Large tasks that can be split into clear, non-overlapping slices
+
+Do not use this pattern when:
+
+- Changes are tightly coupled in the same files
+- You need strict step-by-step sequencing
+- The task is tiny and overhead would be higher than benefit
+
+### Branch and Worktree Convention
+
+Create one branch/worktree per subagent task using a clear naming scheme:
+
+- Branch: `agent/<topic>-<short-scope>`
+- Worktree path: `./worktrees/<topic>-<short-scope>`
+
+Example:
+
+```bash
+git worktree add -b agent/docs-prd ./worktrees/docs-prd
+git worktree add -b agent/ui-shell ./worktrees/ui-shell
+git worktree add -b agent/tests-validation ./worktrees/tests-validation
+```
+
+### Parallel Execution Protocol
+
+1. Split work into independent task specs with clear file ownership.
+2. Create one worktree per task.
+3. Run one subagent per worktree/task.
+4. Each subagent must:
+  - create/update its own plan file in `plans/`
+  - implement only its assigned scope
+  - run relevant validation
+  - update docs/TODO/changelog for its scope
+5. Review each branch independently before integration.
+6. Merge branches in a deterministic order (lowest-risk first).
+7. Run full validation after all merges.
+
+### Conflict and Safety Rules
+
+- Prefer strict ownership boundaries to avoid merge conflicts.
+- If two tasks must touch the same file, sequence them instead of parallelizing.
+- Never use destructive commands to resolve parallel integration issues.
+- If conflicts occur, resolve manually and document decisions in changelog.
+- Delete worktrees after merge to keep workspace clean.
+
+### Suggested Merge Order
+
+1. Docs and planning changes
+2. Pure refactors with no behavior change
+3. Feature implementation branches
+4. Test and coverage hardening
+5. Final integration fixups
+
+### Cleanup
+
+After merge:
+
+```bash
+git worktree remove ./worktrees/docs-prd
+git worktree remove ./worktrees/ui-shell
+git worktree remove ./worktrees/tests-validation
+```
+
+Optional branch cleanup:
+
+```bash
+git branch -d agent/docs-prd
+git branch -d agent/ui-shell
+git branch -d agent/tests-validation
+```
+
+---
+
+## 14) Validation
 
 Run only commands that exist.
 
@@ -514,7 +599,7 @@ After any modification:
 
 ---
 
-## 14) Completion Criteria
+## 15) Completion Criteria
 
 Initialization is complete when:
 
