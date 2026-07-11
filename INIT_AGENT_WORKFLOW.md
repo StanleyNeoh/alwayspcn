@@ -1,4 +1,4 @@
-# Agent Prompt
+# Workflow Bootstrap Prompt
 
 Read this file and initialize the repository.
 
@@ -17,10 +17,25 @@ Requirements:
 - Scaffold the app if needed.
 - Use Tailwind CSS with shadcn/ui as the default UI system.
 - Use Motion only when animation requirements justify it.
+- Keep workflow outputs harness agnostic (do not hard-lock to a single agent runtime).
+- Keep all generated guidance model agnostic (no vendor/model-specific behavior assumptions).
+- Use discovery-first config updates (no primary harness path unless user explicitly requests one).
+
+## Harness + Model Agnostic Rules
+
+Treat this workflow as portable across agent harnesses and model providers.
+
+- Do not assume a specific model family, context window, or vendor-only capability.
+- Write prompts/instructions against capabilities (planning, code edit, validation), not model names.
+- Use `AGENTS.md` as the canonical router, then mirror equivalent guidance into other harness files when those harnesses are present or requested.
+- Treat router semantics as canonical, not any single harness file path.
+- Keep paths and config additive. Never delete another harness config to make one harness work.
+- Prefer neutral wording such as "selected model" or "active model".
+- If a harness cannot consume a feature (for example, skills auto-install), provide a fallback mapping and continue.
 
 ## Purpose
 
-This is a one-time bootstrapper for a solo-dev agentic development workflow.
+This is a one-time bootstrapper for a solo-dev agentic development workflow that remains portable across harnesses and models.
 
 It generates:
 
@@ -34,7 +49,7 @@ It generates:
 8. `README.md`
 9. App scaffold if requested
 
-After initialization, day-to-day behavior must be controlled by `AGENTS.md` and the skill files it routes to.
+After initialization, day-to-day behavior must be controlled by shared routing semantics mirrored into whichever harness files are present or requested (including `AGENTS.md` when used).
 
 Do not create empty local skill folders.
 
@@ -48,27 +63,30 @@ When instructed to initialize, run this workflow in order:
 2. Create core folders
 3. Install external skills
 4. Generate `AGENTS.md`
-5. Generate core local skills
-6. Generate DeepWiki MCP config
-7. Generate full PRD and planning docs
-8. Generate `docs/DESIGN_BRIEF.md`
-9. Generate plan files in `plans/`
-10. Generate `TODO.md`
-11. Generate `README.md`
-12. Scaffold app if requested
-13. Configure Tailwind + shadcn/ui if app is scaffolded or requested
-14. Configure Motion only if animation is required
-15. Run available validation
-16. Run security review if external skill is available
-17. Create changelog
-18. Update project context and commands
-19. Use subagents + git worktrees for parallelizable slices when beneficial
+5. Generate harness mirrors when relevant
+6. Generate core local skills
+7. Generate DeepWiki MCP config
+8. Generate full PRD and planning docs
+9. Generate `docs/DESIGN_BRIEF.md`
+10. Generate plan files in `plans/`
+11. Generate `TODO.md`
+12. Generate `README.md`
+13. Scaffold app if requested
+14. Configure Tailwind + shadcn/ui if app is scaffolded or requested
+15. Configure Motion only if animation is required
+16. Run available validation
+17. Run security review if external skill is available
+18. Create changelog
+19. Update project context and commands
+20. Use subagents + git worktrees for parallelizable slices when beneficial
 
 ---
 
 ## 2) Create Directory Structure
 
-Run from repo root:
+Run from repo root.
+
+Core (harness-neutral) directories:
 
 ```bash
 mkdir -p skills/coding-rules
@@ -79,12 +97,20 @@ mkdir -p skills/validation
 mkdir -p skills/product-planning
 mkdir -p skills/planning
 mkdir -p skills/documentation
-mkdir -p .agents/skills
-mkdir -p .kiro/settings
+mkdir -p skills/external
 mkdir -p docs
 mkdir -p plans
 mkdir -p changelogs
 mkdir -p security-reports
+```
+
+Harness-specific directories should be created only when that harness is detected or explicitly requested, for example:
+
+```bash
+mkdir -p .agents/skills
+mkdir -p .kiro/settings
+mkdir -p .vscode
+mkdir -p .cursor
 ```
 
 Do not create these local skill folders by default:
@@ -116,7 +142,7 @@ npx skills add https://github.com/github/awesome-copilot --skill documentation-w
 npx skills add https://github.com/ctsstc/get-shit-done-skills --skill gsd
 ```
 
-Verify the following skills exist somewhere in repo or agent skill directory:
+Verify the following skills exist somewhere in the repository or configured skill directories:
 
 - `frontend-design`
 - `agent-browser`
@@ -126,7 +152,17 @@ Verify the following skills exist somewhere in repo or agent skill directory:
 - `documentation-writer`
 - `gsd`
 
-Canonical expected references from `AGENTS.md`:
+Canonical expected references (harness-neutral preferred):
+
+- `skills/external/frontend-design/SKILL.md`
+- `skills/external/agent-browser/SKILL.md`
+- `skills/external/react-grab/SKILL.md`
+- `skills/external/security-review/SKILL.md`
+- `skills/external/changelog-automation/SKILL.md`
+- `skills/external/documentation-writer/SKILL.md`
+- `skills/external/gsd/SKILL.md`
+
+Optional harness mirrors (create when needed):
 
 - `.agents/skills/frontend-design/SKILL.md`
 - `.agents/skills/agent-browser/SKILL.md`
@@ -136,7 +172,7 @@ Canonical expected references from `AGENTS.md`:
 - `.agents/skills/documentation-writer/SKILL.md`
 - `.agents/skills/gsd/SKILL.md`
 
-If installer places skills elsewhere, locate and create stable references under `.agents/skills/`.
+If installer places skills elsewhere, locate and create stable references under `skills/external/` first, then add harness mirrors as symlinks or copies when required.
 
 Safe inspection commands:
 
@@ -150,7 +186,7 @@ find . -path '*/documentation-writer/SKILL.md'
 find . -path '*/gsd/SKILL.md'
 ```
 
-If needed, create symlinks or copy directories so `.agents/skills/<skill-name>/SKILL.md` resolves.
+If needed, create symlinks or copy directories so the chosen canonical location and any required harness mirrors resolve.
 
 Do not delete installed files.
 
@@ -193,6 +229,22 @@ Create `AGENTS.md` with a concise runtime router that includes:
 - Non-negotiable rules list
 
 The prior malformed inline template blocks should be rendered as valid markdown sections and fenced blocks.
+
+## 4.1) Generate Harness Mirrors (When Applicable)
+
+Routing semantics are the source of truth. Create/update harness files only when the harness is detected in the repo or explicitly requested.
+
+Possible mirrors:
+
+- `.github/copilot-instructions.md`
+- `CLAUDE.md`
+- `.cursor/rules/project.mdc`
+
+Mirror policy:
+
+- Keep semantics aligned with `AGENTS.md`.
+- Do not overwrite user-authored harness content blindly; merge or append a clearly delimited managed block.
+- If a mirror format cannot represent a rule exactly, preserve intent and note the approximation in `changelogs/`.
 
 ---
 
@@ -247,7 +299,23 @@ Should define required docs creation/update behavior and required new-project do
 
 ## 6) Generate DeepWiki MCP Config
 
-Create `.kiro/settings/mcp.json`:
+Use discovery-first MCP config updates.
+
+Known MCP config candidates:
+
+- `mcp.json`
+- `.vscode/mcp.json`
+- `.cursor/mcp.json`
+- `.kiro/settings/mcp.json`
+
+Rules:
+
+1. Detect existing MCP config files in known candidates.
+2. Merge `deepwiki` into each existing config file's `mcpServers`.
+3. If none exist, create `mcp.json` at repository root as the harness-neutral default.
+4. If user requests a harness-specific location, also write there.
+
+Required deepwiki entry:
 
 ```json
 {
@@ -485,6 +553,12 @@ After generation, inspect codebase and update:
 
 If design info is insufficient and materially blocks UX decisions, ask user.
 
+Also ensure generated docs remain harness/model neutral:
+
+- No model-vendor lock-in language.
+- No harness-specific assumptions unless contained in a harness mirror section.
+- Use capability-based wording and fallback instructions.
+
 ---
 
 ## 13) Subagents + Git Worktrees (Parallelism)
@@ -604,11 +678,12 @@ After any modification:
 Initialization is complete when:
 
 - `AGENTS.md` exists
+- Harness mirrors created when applicable or requested
 - Core local modular skill files exist
 - No empty local skill folders exist
 - External skills were installed or failures reported
 - `gsd` installed or failure reported
-- DeepWiki MCP config exists
+- DeepWiki MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
 - Full docs exist and are implementation-ready:
   - `docs/PRD.md`
   - `docs/TECHNICAL_PLAN.md`
@@ -631,3 +706,4 @@ Initialization is complete when:
 - Coverage attempted when tooling exists
 - Security review attempted if available
 - Changelog created
+- Docs and workflow guidance are model agnostic and harness agnostic
