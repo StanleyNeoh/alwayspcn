@@ -17,7 +17,7 @@ Requirements:
 - Include Chrome DevTools MCP.
 - Include Vercel Next DevTools MCP.
 - Include codemogger MCP for code indexing.
-- Request MCP auth values from the user via `agent.env`.
+- Request Firecrawl auth value from the user via `agent.env`.
 - Generate docs, `TODO.md`, and `README.md`.
 - Scaffold the app if needed.
 - Use Tailwind CSS with shadcn/ui as the default UI system.
@@ -71,7 +71,7 @@ When instructed to initialize, run this workflow in order:
 5. Generate harness mirrors when relevant
 6. Generate core local skills
 7. Generate MCP config (Context7 + Firecrawl + Chrome DevTools + Vercel Next DevTools + codemogger)
-8. During initialization only, generate or update `agent.env` for required MCP auth values
+8. During initialization only, generate or update `agent.env` for the required Firecrawl auth value
 8. Generate full PRD and planning docs
 9. Generate `docs/DESIGN_BRIEF.md`
 10. Generate plan files in `plans/`
@@ -308,7 +308,7 @@ Should define required docs creation/update behavior and required new-project do
 
 Use discovery-first MCP config updates.
 
-Before finalizing MCP config during initialization, generate `agent.env` at repo root with placeholders for required auth values and ask the user to populate it.
+Before finalizing MCP config during initialization, generate `agent.env` at repo root with a placeholder for the required Firecrawl auth value and ask the user to populate it.
 
 Create or update `agent.env` only when running the initialization workflow. For non-initialization tasks, do not auto-create `agent.env`; use existing values if present and rely on `agent.env.example` as the template.
 
@@ -317,15 +317,6 @@ Minimum `agent.env` keys:
 ```env
 # Required for Firecrawl MCP
 FIRECRAWL_API_KEY=
-
-# Add if your Vercel MCP usage requires auth
-VERCEL_TOKEN=
-
-# Add if your codemogger setup uses remote/cloud auth
-CODEMOGGER_API_KEY=
-
-# Add if your Context7 setup requires auth
-CONTEXT7_API_KEY=
 ```
 
 Also create `agent.env.example` with the same keys and ensure `agent.env` is ignored in VCS.
@@ -374,10 +365,7 @@ Required MCP entries:
       "args": [
         "-y",
         "vercel-next-dev-tools-mcp@latest"
-      ],
-      "env": {
-        "VERCEL_TOKEN": "${VERCEL_TOKEN}"
-      }
+      ]
     },
     "codemogger": {
       "command": "npx",
@@ -385,10 +373,7 @@ Required MCP entries:
         "-y",
         "codemogger",
         "mcp"
-      ],
-      "env": {
-        "CODEMOGGER_API_KEY": "${CODEMOGGER_API_KEY}"
-      }
+      ]
     }
   }
 }
@@ -396,7 +381,7 @@ Required MCP entries:
 
 If another MCP config exists, preserve existing servers and merge all required MCP entries into `mcpServers`.
 
-When MCP servers support environment injection, map auth fields to `${...}` variables resolved from `agent.env`.
+Use environment injection only for Firecrawl auth, mapped to `${FIRECRAWL_API_KEY}` resolved from `agent.env`.
 
 If a harness cannot auto-load `agent.env`, document a fallback command wrapper in `README.md` (for example using `set -a; source agent.env; set +a`).
 
@@ -767,7 +752,7 @@ Initialization is complete when:
 - Chrome DevTools MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
 - Vercel Next DevTools MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
 - codemogger MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
-- `agent.env` exists with placeholders for MCP auth and `agent.env.example` exists for sharing defaults
+- `agent.env` exists with a Firecrawl auth placeholder and `agent.env.example` exists for sharing defaults
 - Initial codemogger repository indexing attempted or failure reported
 - Full docs exist and are implementation-ready:
   - `docs/PRD.md`
