@@ -41,12 +41,21 @@ export type RouteWeights = {
   pcn: number;
   future_network: number;
   cycling_path: number;
+  // Non-PCN road weights (grouped by hierarchy)
+  road_major: number;   // motorway, trunk, primary
+  road_secondary: number; // secondary, tertiary
+  road_local: number;   // residential, unclassified, other
+  road_bridge: number;  // synthetic bridge edges connecting PCN to road graph
 };
 
 export const DEFAULT_ROUTE_WEIGHTS: RouteWeights = {
   pcn: 0.5,
   future_network: 0.75,
   cycling_path: 1.0,
+  road_major: 2.5,
+  road_secondary: 2.2,
+  road_local: 2.5,
+  road_bridge: 3.0,
 };
 
 // Build a full factor map merging user weights with fixed road/bridge penalties.
@@ -55,17 +64,17 @@ function buildFactor(w: RouteWeights): Record<string, number> {
     pcn: w.pcn,
     future_network: w.future_network,
     cycling_path: w.cycling_path,
-    other: 1.08,
-    // Road kinds — penalised
-    motorway: 3.0,
-    trunk: 2.5,
-    primary: 2.0,
-    secondary: 2.2,
-    tertiary: 2.3,
-    residential: 2.5,
-    unclassified: 2.5,
+    other: w.road_local,
+    // Road kinds — grouped into major/secondary/local
+    motorway: w.road_major,
+    trunk: w.road_major,
+    primary: w.road_major,
+    secondary: w.road_secondary,
+    tertiary: w.road_secondary,
+    residential: w.road_local,
+    unclassified: w.road_local,
     // Synthetic edges bridging PCN nodes to the road network
-    bridge: 1.5,
+    bridge: w.road_bridge,
   };
 }
 

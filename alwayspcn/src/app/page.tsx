@@ -16,7 +16,6 @@ import {
   type RouteWeights,
   type RoadsGeoJson,
 } from "@/lib/routing";
-import { buildMergedGraph } from "@/lib/cluster-graph";
 import { cn } from "@/lib/utils";
 
 const RouteMap = dynamic(
@@ -75,11 +74,9 @@ function useDraggable(initial: { x: number; y: number }) {
 /** Matches "1.3521, 103.8198" or "1.3521,103.8198" (lat,lng) */
 const COORD_RE = /^[-+]?\d+\.?\d*\s*,\s*[-+]?\d+\.?\d*$/;
 
-type WorkerResultMessage = {
-  type: "result";
-  requestId: number;
-  result: RouteResult;
-};
+type WorkerResultMessage =
+  | { type: "result"; requestId: number; result: RouteResult }
+  | { type: "graph_ready"; graph: GraphData };
 
 export default function Home() {
   const [graph, setGraph] = useState<GraphData | null>(null);
@@ -91,6 +88,7 @@ export default function Home() {
   const [message, setMessage] = useState("Load the network and set two points to route.");
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [roadsGeojson, setRoadsGeojson] = useState<RoadsGeoJson | null>(null);
+  const [roadsLoading, setRoadsLoading] = useState(false);
   const [showPcnOverlay, setShowPcnOverlay] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [activeGraph, setActiveGraph] = useState<GraphData | null>(null);
@@ -98,13 +96,15 @@ export default function Home() {
   const [showLegend, setShowLegend] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [advOpen, setAdvOpen] = useState(true);
+  const [advOpen, setAdvOpen] = useState(false);
   const [clusterEnabled, setClusterEnabled] = useState(false);
   const [clusterThreshold, setClusterThreshold] = useState(10);
   const [routeWeights, setRouteWeights] = useState<RouteWeights>(DEFAULT_ROUTE_WEIGHTS);
 
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
+  /** True when activeGraph was just set from a worker graph_ready — skip re-sending init_graph. */
+  const skipWorkerInitRef = useRef(false);
 
   const panel = useDraggable({ x: 16, y: 16 });
   const adv = useDraggable({ x: 16, y: 490 });
@@ -158,13 +158,17 @@ export default function Home() {
       workerRef.current = worker;
       worker.onmessage = (event: MessageEvent<WorkerResultMessage>) => {
         const payload = event.data;
-        if (!payload || payload.type !== "result") {
+        if (!payload) return;
+        if (payload.type === "graph_ready") {
+          skipWorkerInitRef.current = true;
+          setActiveGraph(payload.graph);
+          setGraphBuilding(false);
           return;
         }
-        if (payload.requestId !== requestIdRef.current) {
-          return;
+        if (payload.type === "result") {
+          if (payload.requestId !== requestIdRef.current) return;
+          setRoute(payload.result);
         }
-        setRoute(payload.result);
       };
       return () => {
         worker.terminate();
@@ -177,9 +181,14 @@ export default function Home() {
 
   // Cache the active graph in the worker once on change so compute messages
   // don't need to clone the full graph (~2 MB) on every route request.
+  // Skip when the graph was already set inside the worker (build_graph path).
   useEffect(() => {
     const worker = workerRef.current;
     if (!worker || !activeGraph) return;
+    if (skipWorkerInitRef.current) {
+      skipWorkerInitRef.current = false;
+      return;
+    }
     worker.postMessage({ type: "init_graph", graph: activeGraph });
   }, [activeGraph]);
 
@@ -279,25 +288,29 @@ export default function Home() {
     setGraph(loadedGraph);
 
     const nodeCount = loadedGraph.meta.nodes.toLocaleString();
-    setMessage(`PCN network ready (${nodeCount} nodes). Loading Singapore roads…`);
+    setMessage(`PCN network ready (${nodeCount} nodes). Set two points to route.`);
+  };
 
+  const loadRoads = async () => {
+    if (roadsGeojson || roadsLoading) return;
+    setRoadsLoading(true);
+    setMessage("Loading Singapore roads overlay…");
     try {
       const roadsResponse = await fetch("/api/data/roads");
       if (!roadsResponse.ok) {
-        setMessage(
-          `PCN network ready (${nodeCount} nodes). Road overlay unavailable — run npm run build:roads.`
-        );
+        setMessage("Road overlay unavailable — run npm run build:roads.");
         return;
       }
       const roadsData: RoadsGeoJson = await roadsResponse.json();
       setRoadsGeojson(roadsData);
-
       const roadCount = Array.isArray(roadsData.features)
         ? roadsData.features.length.toLocaleString()
         : "0";
-      setMessage(`Ready. ${nodeCount} PCN nodes · ${roadCount} road features loaded.`);
+      setMessage(`Roads loaded (${roadCount} features). Rebuilding graph…`);
     } catch {
-      setMessage(`PCN network ready (${nodeCount} nodes). Road overlay failed to load.`);
+      setMessage("Road overlay failed to load.");
+    } finally {
+      setRoadsLoading(false);
     }
   };
 
@@ -337,6 +350,10 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void loadGraph(); }, []);
 
+  // Auto-load roads once the PCN graph is ready
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (graph) void loadRoads(); }, [graph]);
+
   const rawRoadNodeCount = useMemo(() => {
     if (!roadsGeojson) return 0;
     const ROAD_KINDS = new Set(["motorway", "trunk", "primary", "secondary", "tertiary"]);
@@ -352,13 +369,29 @@ export default function Home() {
 
   // Build merged graph (PCN + roads, optionally clustered). Debounced 250 ms
   // so slider drags don't trigger mid-drag rebuilds.
+  // When a worker is available, the merge runs off the main thread to avoid
+  // freezing the UI on large datasets.
   useEffect(() => {
     if (!graph) { setActiveGraph(null); return; }
     if (!roadsGeojson) { setActiveGraph(graph); return; }
     setGraphBuilding(true);
     const id = window.setTimeout(() => {
-      setActiveGraph(buildMergedGraph(graph, roadsGeojson, clusterEnabled ? clusterThreshold : 0));
-      setGraphBuilding(false);
+      const worker = workerRef.current;
+      if (worker) {
+        worker.postMessage({
+          type: "build_graph",
+          pcnGraph: graph,
+          roadsGeojson,
+          clusterThreshold: clusterEnabled ? clusterThreshold : 0,
+        });
+        // graph_ready response will set activeGraph and clear graphBuilding
+      } else {
+        // Fallback: run on main thread (no worker available)
+        import("@/lib/cluster-graph").then(({ buildMergedGraph }) => {
+          setActiveGraph(buildMergedGraph(graph, roadsGeojson, clusterEnabled ? clusterThreshold : 0));
+          setGraphBuilding(false);
+        });
+      }
     }, 250);
     return () => window.clearTimeout(id);
   }, [graph, roadsGeojson, clusterEnabled, clusterThreshold]);
@@ -390,7 +423,7 @@ export default function Home() {
       {/* No overflow:hidden so the combobox dropdown can escape the card */}
       <div
         style={{ transform: `translate(${panel.pos.x}px, ${panel.pos.y}px)` }}
-        className="absolute left-0 top-0 z-[1000] w-[310px] select-none"
+        className="absolute left-0 top-0 z-[1000] w-[min(310px,calc(100vw-32px))] select-none"
       >
         <div className="rounded-2xl border border-zinc-200/70 bg-white/95 shadow-xl backdrop-blur-xl dark:border-zinc-700/70 dark:bg-zinc-950/95">
 
@@ -425,7 +458,7 @@ export default function Home() {
           </div>
 
           {/* Card content */}
-          {panelOpen && <div className="space-y-3 p-4">
+          {panelOpen && <div className="max-h-[calc(100svh-120px)] space-y-3 overflow-y-auto p-4">
 
             {/* Location inputs */}
             <div className="space-y-2">
@@ -546,22 +579,35 @@ export default function Home() {
                 </button>
                 {showLegend && (
                   <div className="mt-1 flex flex-col gap-y-1.5 rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 text-[10px] text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-4 rounded-full bg-[#00b09b]" />
-                      Park Connector Network
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-4 rounded-full bg-[#a855f7]" />
-                      Future Network
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-4 rounded-full bg-[#4a90d9]" />
-                      Cycling Path Network
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-4 rounded-full bg-[#94a3b8]" />
-                      Non-PCN Road
-                    </span>
+                    {/* PCN — solid lines */}
+                    {[
+                      { color: "#00b09b", label: "Park Connector Network" },
+                      { color: "#a855f7", label: "Future Network" },
+                      { color: "#4a90d9", label: "Cycling Path Network" },
+                    ].map(({ color, label }) => (
+                      <span key={label} className="flex items-center gap-1.5">
+                        <span className="inline-block h-[3px] w-5 rounded-full" style={{ backgroundColor: color }} />
+                        {label}
+                      </span>
+                    ))}
+                    <div className="my-0.5 h-px bg-border/30" />
+                    {/* Roads — dashed lines */}
+                    {[
+                      { color: "#dc2626", label: "Major Roads", sub: "motorway · trunk · primary" },
+                      { color: "#ea580c", label: "Secondary Roads", sub: "secondary · tertiary" },
+                      { color: "#ca8a04", label: "Local Roads", sub: "residential · unclassified" },
+                      { color: "#94a3b8", label: "Bridge Connections", sub: "PCN–road link edges" },
+                    ].map(({ color, label, sub }) => (
+                      <span key={label} className="flex items-center gap-1.5">
+                        <svg width="20" height="6" className="shrink-0">
+                          <line x1="0" y1="3" x2="20" y2="3" stroke={color} strokeWidth="2.5" strokeDasharray="4 4" />
+                        </svg>
+                        <span className="flex flex-col gap-0">
+                          <span>{label}</span>
+                          <span className="text-[9px] text-muted-foreground/50">{sub}</span>
+                        </span>
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
@@ -574,7 +620,7 @@ export default function Home() {
       {/* ── Advanced card ─────────────────────────────────────── */}
       <div
         style={{ transform: `translate(${adv.pos.x}px, ${adv.pos.y}px)` }}
-        className="absolute left-0 top-0 z-[1000] w-[310px] select-none"
+        className="absolute left-0 top-0 z-[1000] w-[min(310px,calc(100vw-32px))] select-none"
       >
         <div className="rounded-2xl border border-zinc-200/70 bg-white/95 shadow-xl backdrop-blur-xl dark:border-zinc-700/70 dark:bg-zinc-950/95">
 
@@ -605,7 +651,7 @@ export default function Home() {
 
           {/* Card content */}
           {advOpen && (
-            <div className="space-y-4 p-4">
+            <div className="max-h-[calc(100svh-120px)] space-y-4 overflow-y-auto p-4">
 
               {/* Overlays */}
               <div className="space-y-2">
@@ -627,6 +673,11 @@ export default function Home() {
                   >
                     <Layers className="h-3 w-3" />Network
                   </button>
+                  {roadsLoading && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />Roads…
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -733,39 +784,59 @@ export default function Home() {
                   </button>
                 </div>
                 <p className="text-[10px] leading-relaxed text-muted-foreground/60">
-                  Lower = more preferred. Affects path selection when routing.
+                  Lower = more preferred. All path types share the same scale.
                 </p>
 
-                {(["pcn", "future_network", "cycling_path"] as const).map((key) => {
+                {(["pcn", "future_network", "cycling_path", "road_bridge", "road_local", "road_secondary", "road_major"] as const).map((key) => {
                   const labels: Record<string, string> = {
                     pcn: "Park Connector Network",
                     future_network: "Future Network",
                     cycling_path: "Cycling Path Network",
+                    road_major: "Major Roads",
+                    road_secondary: "Secondary Roads",
+                    road_local: "Local Roads",
+                    road_bridge: "Bridge Connections",
+                  };
+                  const sublabels: Record<string, string> = {
+                    road_major: "motorway · trunk · primary",
+                    road_secondary: "secondary · tertiary",
+                    road_local: "residential · unclassified",
+                    road_bridge: "PCN–road link edges",
                   };
                   const colors: Record<string, string> = {
                     pcn: "#00b09b",
                     future_network: "#a855f7",
                     cycling_path: "#4a90d9",
+                    road_major: "#ef4444",
+                    road_secondary: "#f97316",
+                    road_local: "#eab308",
+                    road_bridge: "#94a3b8",
                   };
+                  const sub = sublabels[key];
                   return (
                     <div key={key} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-1.5 text-muted-foreground">
-                          <span className="inline-block h-1.5 w-3 rounded-full" style={{ backgroundColor: colors[key] }} />
-                          {labels[key]}
+                        <span className="flex flex-col gap-0">
+                          <span className="flex items-center gap-1.5 text-muted-foreground">
+                            <span className="inline-block h-1.5 w-3 rounded-full" style={{ backgroundColor: colors[key] }} />
+                            {labels[key]}
+                          </span>
+                          {sub && (
+                            <span className="pl-[18px] text-[9px] text-muted-foreground/50">{sub}</span>
+                          )}
                         </span>
                         <span className="font-medium tabular-nums">{routeWeights[key].toFixed(2)}</span>
                       </div>
                       <input
                         type="range"
                         min={0.1}
-                        max={3.0}
+                        max={5.0}
                         step={0.05}
                         value={routeWeights[key]}
                         onChange={(e) =>
                           setRouteWeights((prev) => ({ ...prev, [key]: Number(e.target.value) }))
                         }
-                        className="w-full accent-primary"
+                        className="w-full"
                         style={{ accentColor: colors[key] }}
                       />
                       <div className="flex justify-between text-[9px] text-muted-foreground/50">

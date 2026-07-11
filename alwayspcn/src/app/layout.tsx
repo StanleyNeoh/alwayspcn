@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Bricolage_Grotesque, IBM_Plex_Mono, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
@@ -24,6 +24,12 @@ const mono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "AlwaysPCN",
   description: "Park connector first route planner for Singapore",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({

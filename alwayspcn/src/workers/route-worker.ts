@@ -4,7 +4,9 @@ import {
   type GraphData,
   type RouteResult,
   type RouteWeights,
+  type RoadsGeoJson,
 } from "@/lib/routing";
+import { buildMergedGraph } from "@/lib/cluster-graph";
 
 type InitGraphMessage = {
   type: "init_graph";
@@ -19,12 +21,24 @@ type RouteRequest = {
   weights?: RouteWeights;
 };
 
-type WorkerMessage = InitGraphMessage | RouteRequest;
+type BuildGraphMessage = {
+  type: "build_graph";
+  pcnGraph: GraphData;
+  roadsGeojson: RoadsGeoJson;
+  clusterThreshold: number;
+};
+
+type WorkerMessage = InitGraphMessage | RouteRequest | BuildGraphMessage;
 
 type RouteResponse = {
   type: "result";
   requestId: number;
   result: RouteResult;
+};
+
+type GraphReadyResponse = {
+  type: "graph_ready";
+  graph: GraphData;
 };
 
 // Graph is sent once via init_graph and cached here. Subsequent compute
@@ -48,6 +62,14 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
       requestId: message.requestId,
       result,
     };
+    self.postMessage(response);
+    return;
+  }
+
+  if (message.type === "build_graph") {
+    const merged = buildMergedGraph(message.pcnGraph, message.roadsGeojson, message.clusterThreshold);
+    cachedGraph = merged;
+    const response: GraphReadyResponse = { type: "graph_ready", graph: merged };
     self.postMessage(response);
   }
 };

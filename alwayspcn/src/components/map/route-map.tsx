@@ -10,7 +10,7 @@ import type { RouteSegment } from "@/lib/routing";
 
 type Coordinate = [number, number];
 
-// Roads overlay colours (also used as fallback for road-kind edges in the merged PCN layer)
+// Roads overlay colours (used for the network overlay GeoJSON layer)
 const ROAD_STYLE: Record<string, { color: string; weight: number; opacity: number }> = {
   motorway:      { color: "#e8003d", weight: 3, opacity: 0.7 },
   trunk:         { color: "#e67e22", weight: 2, opacity: 0.7 },
@@ -28,16 +28,33 @@ const PCN_STYLE: Record<string, { color: string; weight: number; opacity: number
   cycling_path:   { color: "#4a90d9", weight: 2, opacity: 0.75 },
 };
 
-// Color for route segments that travel off the PCN (roads, bridges, etc.)
-const ROUTE_OFF_PCN: { color: string; weight: number; opacity: number } = {
-  color: "#94a3b8",
-  weight: 5,
-  opacity: 0.9,
+// Route segment styles — PCN kinds are solid, road/bridge kinds are dashed with distinct colours
+type RouteStyle = { color: string; weight: number; opacity: number; dashArray?: string };
+
+const ROUTE_SEGMENT_STYLE: Record<string, RouteStyle> = {
+  // PCN — solid lines
+  pcn:            { color: "#00b09b", weight: 5, opacity: 0.95 },
+  future_network: { color: "#a855f7", weight: 5, opacity: 0.95 },
+  cycling_path:   { color: "#4a90d9", weight: 5, opacity: 0.95 },
+  // Bridge — dashed slate
+  bridge:         { color: "#94a3b8", weight: 4, opacity: 0.9, dashArray: "6 8" },
+  // Local roads — dashed yellow
+  residential:    { color: "#ca8a04", weight: 4, opacity: 0.9, dashArray: "6 8" },
+  unclassified:   { color: "#ca8a04", weight: 4, opacity: 0.9, dashArray: "6 8" },
+  other:          { color: "#ca8a04", weight: 4, opacity: 0.9, dashArray: "6 8" },
+  // Secondary roads — dashed orange
+  secondary:      { color: "#ea580c", weight: 4, opacity: 0.9, dashArray: "6 8" },
+  tertiary:       { color: "#ea580c", weight: 4, opacity: 0.9, dashArray: "6 8" },
+  // Major roads — dashed red
+  motorway:       { color: "#dc2626", weight: 4, opacity: 0.9, dashArray: "6 8" },
+  trunk:          { color: "#dc2626", weight: 4, opacity: 0.9, dashArray: "6 8" },
+  primary:        { color: "#dc2626", weight: 4, opacity: 0.9, dashArray: "6 8" },
 };
 
-function routeSegmentStyle(kind: string): { color: string; weight: number; opacity: number } {
-  if (PCN_STYLE[kind]) return { ...PCN_STYLE[kind], weight: 5 };
-  return ROUTE_OFF_PCN;
+const ROUTE_FALLBACK_STYLE: RouteStyle = { color: "#94a3b8", weight: 4, opacity: 0.9, dashArray: "6 8" };
+
+function routeSegmentStyle(kind: string): RouteStyle {
+  return ROUTE_SEGMENT_STYLE[kind] ?? ROUTE_FALLBACK_STYLE;
 }
 
 type MapStyleKey = "street" | "satellite" | "map";
