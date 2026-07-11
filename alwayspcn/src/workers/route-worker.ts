@@ -45,6 +45,13 @@ type GraphReadyResponse = {
 // messages only carry start/end/weights — no graph clone per request.
 let cachedGraph: GraphData | null = null;
 
+// Source data stored on first build_graph so subsequent threshold changes
+// don't require re-sending the full PCN + roads payload.
+let storedPcnGraph: GraphData | null = null;
+let storedRoadsGeojson: RoadsGeoJson | null = null;
+// Keyed by threshold — avoids recomputing when the user revisits a value.
+const mergedGraphCache = new Map<number, GraphData>();
+
 self.onmessage = (event: MessageEvent<WorkerMessage>) => {
   const message = event.data;
   if (!message) return;
@@ -67,7 +74,23 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
   }
 
   if (message.type === "build_graph") {
-    const merged = buildMergedGraph(message.pcnGraph, message.roadsGeojson, message.clusterThreshold);
+    // If source data has changed (e.g. new session), invalidate the cache.
+    if (
+      storedPcnGraph !== message.pcnGraph ||
+      storedRoadsGeojson !== message.roadsGeojson
+    ) {
+      storedPcnGraph = message.pcnGraph;
+      storedRoadsGeojson = message.roadsGeojson;
+      mergedGraphCache.clear();
+    }
+
+    const { clusterThreshold } = message;
+    let merged = mergedGraphCache.get(clusterThreshold);
+    if (!merged) {
+      merged = buildMergedGraph(message.pcnGraph, message.roadsGeojson, clusterThreshold);
+      mergedGraphCache.set(clusterThreshold, merged);
+    }
+
     cachedGraph = merged;
     const response: GraphReadyResponse = { type: "graph_ready", graph: merged };
     self.postMessage(response);
