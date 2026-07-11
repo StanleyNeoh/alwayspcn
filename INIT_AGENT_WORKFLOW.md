@@ -25,6 +25,10 @@ Requirements:
 - Keep workflow outputs harness agnostic (do not hard-lock to a single agent runtime).
 - Keep all generated guidance model agnostic (no vendor/model-specific behavior assumptions).
 - Use discovery-first config updates (no primary harness path unless user explicitly requests one).
+- Enforce router loading from `AGENTS.md` (and mirrors) before every non-trivial task.
+- Enforce post-change lifecycle gates: validation, docs update, security review, changelog, and TODO update.
+- Enforce MCP operational usage (not only config presence), including codemogger indexing.
+- Enforce skill routing by trigger, with explicit fallback behavior when a skill is unavailable.
 
 ## Harness + Model Agnostic Rules
 
@@ -60,6 +64,54 @@ Do not create empty local skill folders.
 
 ---
 
+## 0) Strict Execution Contract (Non-Optional)
+
+Use this contract for initialization and all follow-up work generated from this workflow.
+
+1. Preflight router load is required before implementation:
+  - Read `AGENTS.md` first.
+  - Read always-load files referenced by `AGENTS.md`.
+  - If `AGENTS.md` does not exist yet, create it before continuing.
+2. If a required router file cannot be read, stop and request user direction.
+3. Completion is blocked unless all required post-change gates run (or are explicitly reported unavailable):
+  - validation
+  - docs update check
+  - security review attempt
+  - changelog update
+  - TODO update
+4. MCP setup alone is insufficient; operational MCP usage must be attempted and logged.
+5. Skill installation alone is insufficient; skill usage must be triggered by task type and logged.
+6. Any skipped gate must include a reason in output and in changelog.
+7. Never mark the task complete if required gates are missing.
+
+### 0.1) Mandatory Post-Change Gate Checklist
+
+After any non-trivial file change, run this sequence in order:
+
+1. Update or create a plan file in `plans/` (unless tiny change)
+2. Run available validation commands
+3. Run coverage when available and relevant
+4. Update docs impacted by behavior, API, UX, architecture, or operations changes
+5. Attempt security review when the external skill/tool is available
+6. Update changelog entry
+7. Update `TODO.md` status
+8. Report completion with pass/fail/unavailable status per gate
+
+### 0.2) Required Evidence Output
+
+Every initialization or implementation run must output a compact evidence summary:
+
+- Router loaded files
+- Skills triggered
+- MCP tools used
+- Validation commands run and result
+- Security review result
+- Docs updated
+- Changelog updated
+- TODO updated
+
+---
+
 ## 1) Initialization Command
 
 When instructed to initialize, run this workflow in order:
@@ -70,22 +122,25 @@ When instructed to initialize, run this workflow in order:
 4. Generate `AGENTS.md`
 5. Generate harness mirrors when relevant
 6. Generate core local skills
-7. Generate MCP config (Context7 + Firecrawl + Chrome DevTools + Vercel Next DevTools + codemogger)
-8. During initialization only, generate or update `agent.env` for the required Firecrawl auth value
-8. Generate full PRD and planning docs
-9. Generate `docs/DESIGN_BRIEF.md`
-10. Generate plan files in `plans/`
-11. Generate `TODO.md`
-12. Generate `README.md`
-13. Scaffold app if requested
-14. Configure Tailwind + shadcn/ui if app is scaffolded or requested
-15. Configure Motion only if animation is required
-16. Run available validation
-17. Run security review if external skill is available
-18. Create changelog
-19. Index the repository with codemogger when available
-20. Update project context and commands
-21. Use subagents + git worktrees for parallelizable slices when beneficial
+7. Re-load `AGENTS.md` and always-load router files before continuing
+8. Generate MCP config (Context7 + Firecrawl + Chrome DevTools + Vercel Next DevTools + codemogger)
+9. During initialization only, generate or update `agent.env` for the required Firecrawl auth value
+10. Generate full PRD and planning docs
+11. Generate `docs/DESIGN_BRIEF.md`
+12. Generate plan files in `plans/`
+13. Generate `TODO.md`
+14. Generate `README.md`
+15. Scaffold app if requested
+16. Configure Tailwind + shadcn/ui if app is scaffolded or requested
+17. Configure Motion only if animation is required
+18. Run available validation
+19. Run security review if external skill is available
+20. Create changelog
+21. Index the repository with codemogger when available
+22. Run post-change gate checklist in Section 0.1
+23. Update project context and commands
+24. Emit evidence output per Section 0.2
+25. Use subagents + git worktrees for parallelizable slices when beneficial
 
 ---
 
@@ -234,8 +289,25 @@ Create `AGENTS.md` with a concise runtime router that includes:
   - Motion only when required
 - Testing and coverage rule
 - Non-negotiable rules list
+- Required post-change gate checklist (validation, docs, security review, changelog, TODO)
+- MCP operational usage requirement (index/use, not config-only)
+- Skill trigger matrix and fallback behavior
 
 The prior malformed inline template blocks should be rendered as valid markdown sections and fenced blocks.
+
+`AGENTS.md` must include an explicit `Required Work Loop` section:
+
+1. Load router + always-load files
+2. Plan
+3. Implement
+4. Validate
+5. Update docs
+6. Run security review
+7. Update changelog
+8. Update TODO
+9. Report evidence
+
+`AGENTS.md` must state that completion is not allowed if steps 4-9 are missing unless explicitly unavailable and reported.
 
 ## 4.1) Generate Harness Mirrors (When Applicable)
 
@@ -252,6 +324,10 @@ Mirror policy:
 - Keep semantics aligned with `AGENTS.md`.
 - Do not overwrite user-authored harness content blindly; merge or append a clearly delimited managed block.
 - If a mirror format cannot represent a rule exactly, preserve intent and note the approximation in `changelogs/`.
+
+Compatibility note:
+
+- If repository contains `agent.md` or `AGENT.md`, mirror the router semantics there using a managed block so older harness conventions still enforce the same workflow.
 
 ---
 
@@ -392,6 +468,12 @@ After MCP config is in place, perform initial repository indexing through codemo
 ```bash
 npx -y codemogger index .
 ```
+
+Operational usage requirement after initialization and after significant code changes:
+
+- Attempt codemogger indexing and at least one codemogger query/read operation when available.
+- If codemogger is unavailable, report the exact failure and fallback to repository search commands.
+- Record MCP usage status in changelog and final evidence output.
 
 If the repository uses local ignore rules, ensure codemogger local DB artifacts are ignored (for example `.codemogger/`).
 
@@ -623,6 +705,12 @@ Also ensure generated docs remain harness/model neutral:
 - No harness-specific assumptions unless contained in a harness mirror section.
 - Use capability-based wording and fallback instructions.
 
+Also enforce continuity checks:
+
+- Re-open `AGENTS.md` before starting any non-trivial post-init change.
+- Confirm required skill triggers are evaluated for the task type.
+- Confirm MCP operational usage is attempted for relevant tasks.
+
 ---
 
 ## 13) Subagents + Git Worktrees (Parallelism)
@@ -734,6 +822,11 @@ After any modification:
 6. Create changelog
 7. Update docs when relevant
 8. Update TODO
+9. Emit evidence summary with command/status per gate
+
+Enforcement rule:
+
+- If any required gate is skipped without unavailable/failure documentation, the task is incomplete.
 
 ---
 
@@ -777,3 +870,34 @@ Initialization is complete when:
 - Security review attempted if available
 - Changelog created
 - Docs and workflow guidance are model agnostic and harness agnostic
+- Evidence summary emitted with router/skills/MCP/validation/security/docs/changelog/TODO statuses
+
+---
+
+## 16) Skill Trigger Matrix (Enforcement)
+
+Evaluate this matrix before implementation. Trigger matching skills when available.
+
+- UI, frontend, visual polish, interaction debugging: `frontend-design`, `agent-browser`
+- React component extraction and reuse: `react-grab`
+- Security-sensitive changes or release readiness: `security-review`
+- Release notes and update summaries: `changelog-automation`
+- Docs or architecture explanation updates: `documentation-writer`
+- Execution discipline and task completion flow: `gsd`
+
+If a mapped skill is missing:
+
+1. Report missing skill
+2. Continue with equivalent local workflow
+3. Record fallback in changelog and evidence output
+
+---
+
+## 17) AGENTS Router Freshness Rule
+
+To reduce drift where `AGENTS.md` is not consistently applied:
+
+- At start of each non-trivial task, re-open `AGENTS.md` and always-load skill files.
+- If a harness mirror exists, ensure it still matches router semantics.
+- If mismatch is detected, update mirror in the same change set.
+- Never treat mirror files as canonical over `AGENTS.md`.
