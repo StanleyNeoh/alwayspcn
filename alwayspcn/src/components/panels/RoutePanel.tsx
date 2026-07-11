@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, MapPin, Navigation, Search } from "lucide-react";
+import { Compass, Loader2, LocateFixed, MapPin, Navigation, Search } from "lucide-react";
 import { LocationCombobox } from "@/components/ui/location-combobox";
 import { type Coordinate, type GraphData, type RouteResult } from "@/lib/routing";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,14 @@ interface RoutePanelProps {
   pickMode: "start" | "end" | null;
   onPickModeChange: (mode: "start" | "end" | null) => void;
   onMessage: (msg: string) => void;
+
+  // Locate me
+  isLocating: boolean;
+  onLocateMe: () => void;
+
+  // Navigation mode
+  navMode: boolean;
+  onNavModeToggle: () => void;
 
   // Status / route
   message: string;
@@ -45,6 +53,10 @@ export function RoutePanel({
   pickMode,
   onPickModeChange,
   onMessage,
+  isLocating,
+  onLocateMe,
+  navMode,
+  onNavModeToggle,
   message,
   activeRoute,
   useServerRouting,
@@ -73,7 +85,7 @@ export function RoutePanel({
         />
       </div>
 
-      {/* Action row: search + map pick mode */}
+      {/* Action row: search + map pick mode + locate + nav */}
       <div className="flex items-center gap-2">
         <button
           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
@@ -94,6 +106,26 @@ export function RoutePanel({
           role="group"
           aria-label="Map click mode"
         >
+          {/* Locate current position → set as start */}
+          <button
+            type="button"
+            title="Use current location as start"
+            onClick={onLocateMe}
+            disabled={isLocating}
+            className={cn(
+              "flex items-center gap-1 px-2.5 py-2 transition-colors",
+              isLocating
+                ? "bg-blue-500 text-white"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            {isLocating ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <LocateFixed className="h-3 w-3" />
+            )}
+          </button>
+          <div className="w-px bg-border/60" />
           <button
             type="button"
             title={
@@ -138,6 +170,22 @@ export function RoutePanel({
             <Navigation className="h-3 w-3" />E
           </button>
         </div>
+
+        {/* Navigation mode toggle */}
+        <button
+          type="button"
+          title={navMode ? "Exit navigation mode" : "Start navigation mode (heading-up, centres on you)"}
+          onClick={onNavModeToggle}
+          className={cn(
+            "flex shrink-0 items-center gap-1 rounded-xl border px-2.5 py-2 text-xs font-medium transition-colors",
+            navMode
+              ? "border-blue-500 bg-blue-500 text-white"
+              : "border-border/70 text-muted-foreground hover:bg-muted",
+          )}
+        >
+          <Compass className="h-3 w-3" />
+          <span className="hidden sm:inline">{navMode ? "Nav" : "Nav"}</span>
+        </button>
       </div>
 
       {/* Status + route stats */}

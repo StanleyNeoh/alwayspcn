@@ -1,14 +1,38 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import { useState } from "react";
+import L from "leaflet";
+import { useEffect, useState } from "react";
 
 import { Moon, Sun } from "lucide-react";
-import { CircleMarker, GeoJSON, MapContainer, Polyline, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
+import { CircleMarker, GeoJSON, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import type { GeoJsonCollection } from "@/lib/graph-to-geojson";
 import type { RouteSegment } from "@/lib/routing";
 
 type Coordinate = [number, number];
+
+/** Makes a Leaflet divIcon with an SVG heading-cone + position dot. */
+function makeNavIcon(headingDeg: number): L.DivIcon {
+  const svg = `<svg width="48" height="48" viewBox="-24 -24 48 48" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="0" cy="0" r="18" fill="#3b82f6" fill-opacity="0.18"/>
+    <polygon points="0,-20 6,-8 -6,-8" fill="#3b82f6" fill-opacity="0.85" transform="rotate(${headingDeg})"/>
+    <circle cx="0" cy="0" r="7" fill="#3b82f6" stroke="white" stroke-width="2.5"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: "", iconSize: [48, 48], iconAnchor: [24, 24] });
+}
+
+/** Pans the map to the given [lat, lng] position whenever it changes. */
+function NavigationController({ position }: { position: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo(position, map.getZoom() < 16 ? 16 : map.getZoom(), {
+      animate: true,
+      duration: 0.6,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [position[0], position[1]]);
+  return null;
+}
 
 // Roads overlay colours (used for the network overlay GeoJSON layer)
 const ROAD_STYLE: Record<string, { color: string; weight: number; opacity: number }> = {
@@ -85,6 +109,12 @@ type RouteMapProps = {
   pcnGeojson?: GeoJsonCollection | null;
   isDark?: boolean;
   toggleDark?: () => void;
+  /** Navigation mode: continuously centre map on current position. */
+  navMode?: boolean;
+  /** [lat, lng] of the device in navigation mode. */
+  navPosition?: [number, number] | null;
+  /** Compass heading in degrees clockwise from north. */
+  navHeading?: number | null;
 };
 
 function ClickCapture({ onMapPick }: { onMapPick: (point: Coordinate) => void }) {
@@ -104,6 +134,9 @@ export function RouteMap({
   pcnGeojson,
   isDark,
   toggleDark,
+  navMode = false,
+  navPosition = null,
+  navHeading = null,
 }: RouteMapProps) {
   const [mapStyle, setMapStyle] = useState<MapStyleKey>("street");
   const tileConfig = MAP_STYLES[mapStyle];
@@ -149,8 +182,8 @@ export function RouteMap({
   };
 
   return (
-    <div className="relative h-full w-full">
-      {/* Top-right controls: brand + map style switcher */}
+    <div className="relative h-full w-full overflow-hidden">
+      {/* Top-right controls: brand + map style switcher — not affected by map rotation */}
       <div className="absolute right-3 top-3 z-[1000] flex items-center gap-2">
         {/* Brand card */}
         <div className="flex items-center gap-2 overflow-hidden rounded-md border border-gray-200 bg-white/95 px-3 py-1.5 shadow-md backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/95">
@@ -187,66 +220,118 @@ export function RouteMap({
         </div>
       </div>
 
-      <MapContainer center={[1.3521, 103.8198]} zoom={12} className="h-full w-full">
-        <TileLayer
-          key={mapStyle}
-          attribution={tileConfig.attribution}
-          url={tileConfig.url}
-        />
-      <ClickCapture onMapPick={onMapPick} />
+      {/* Navigation heading indicator overlay (compass rose) — not rotated with map */}
+      {navMode && (
+        <div className="absolute bottom-6 right-4 z-[1000] flex h-10 w-10 items-center justify-center rounded-full border border-blue-400/60 bg-white/90 shadow-lg dark:bg-zinc-800/90">
+          <svg
+            width="28"
+            height="28"
+            viewBox="-14 -14 28 28"
+            style={{
+              transform: navHeading !== null ? `rotate(${-navHeading}deg)` : undefined,
+              transition: "transform 0.4s ease-out",
+            }}
+          >
+            <polygon points="0,-11 3.5,-2 -3.5,-2" fill="#ef4444" />
+            <polygon points="0,11 3.5,2 -3.5,2" fill="#6b7280" />
+            <circle cx="0" cy="0" r="2.5" fill="#1f2937" />
+          </svg>
+        </div>
+      )}
 
-      {/* PCN + roads network overlay */}
-      {pcnGeojson ? (
-        <GeoJSON
-          key={`pcn-${pcnGeojson.features.length}`}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data={pcnGeojson as any}
-          style={(feature) => {
-            const kind = (feature?.properties as { kind?: string } | null)?.kind ?? "";
-            return PCN_STYLE[kind] ?? ROAD_STYLE[kind] ?? { color: "#94a3b8", weight: 1.5, opacity: 0.5 };
-          }}
-        />
-      ) : null}
+      {/*
+        Map rotation wrapper — rotates the entire Leaflet map to keep the
+        device's heading pointing upward (heading-up mode).
+        The wrapper is scaled slightly beyond the viewport so rotated corners
+        don't expose blank areas.
+      */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          transform:
+            navMode && navHeading !== null
+              ? `rotate(${-navHeading}deg) scale(1.45)`
+              : undefined,
+          transformOrigin: "50% 50%",
+          transition: "transform 0.5s ease-out",
+        }}
+      >
+        <MapContainer center={[1.3521, 103.8198]} zoom={12} className="h-full w-full">
+          <TileLayer
+            key={mapStyle}
+            attribution={tileConfig.attribution}
+            url={tileConfig.url}
+          />
+        <ClickCapture onMapPick={onMapPick} />
 
-      {/* Computed route — coloured per segment kind, rendered above overlays */}
-      {segGroups.map((group, i) => (
-        <Polyline
-          key={`route-seg-${i}`}
-          positions={group.positions}
-          pathOptions={routeSegmentStyle(group.kind)}
-        >
-          <Tooltip sticky direction="top" offset={[0, -4]} opacity={0.95}>
-            <div className="text-xs leading-snug">
-              <div className="font-semibold text-sm">
-                {group.name || KIND_LABEL[group.kind] || group.kind}
+        {/* Auto-pan to current position in navigation mode */}
+        {navMode && navPosition && (
+          <NavigationController position={navPosition} />
+        )}
+
+        {/* PCN + roads network overlay */}
+        {pcnGeojson ? (
+          <GeoJSON
+            key={`pcn-${pcnGeojson.features.length}`}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            data={pcnGeojson as any}
+            style={(feature) => {
+              const kind = (feature?.properties as { kind?: string } | null)?.kind ?? "";
+              return PCN_STYLE[kind] ?? ROAD_STYLE[kind] ?? { color: "#94a3b8", weight: 1.5, opacity: 0.5 };
+            }}
+          />
+        ) : null}
+
+        {/* Computed route — coloured per segment kind, rendered above overlays */}
+        {segGroups.map((group, i) => (
+          <Polyline
+            key={`route-seg-${i}`}
+            positions={group.positions}
+            pathOptions={routeSegmentStyle(group.kind)}
+          >
+            <Tooltip sticky direction="top" offset={[0, -4]} opacity={0.95}>
+              <div className="text-xs leading-snug">
+                <div className="font-semibold text-sm">
+                  {group.name || KIND_LABEL[group.kind] || group.kind}
+                </div>
+                <div className="text-gray-500">{KIND_LABEL[group.kind] ?? group.kind}</div>
+                <div className="mt-0.5 text-gray-600">
+                  {group.distanceMeters >= 1000
+                    ? `${(group.distanceMeters / 1000).toFixed(2)} km`
+                    : `${Math.round(group.distanceMeters)} m`}
+                </div>
               </div>
-              <div className="text-gray-500">{KIND_LABEL[group.kind] ?? group.kind}</div>
-              <div className="mt-0.5 text-gray-600">
-                {group.distanceMeters >= 1000
-                  ? `${(group.distanceMeters / 1000).toFixed(2)} km`
-                  : `${Math.round(group.distanceMeters)} m`}
-              </div>
-            </div>
-          </Tooltip>
-        </Polyline>
-      ))}
+            </Tooltip>
+          </Polyline>
+        ))}
 
-      {start ? (
-        <CircleMarker
-          center={[start[1], start[0]]}
-          radius={8}
-          pathOptions={{ color: "#0f766e", fillColor: "#0f766e", fillOpacity: 0.9 }}
-        />
-      ) : null}
+        {start ? (
+          <CircleMarker
+            center={[start[1], start[0]]}
+            radius={8}
+            pathOptions={{ color: "#0f766e", fillColor: "#0f766e", fillOpacity: 0.9 }}
+          />
+        ) : null}
 
-      {end ? (
-        <CircleMarker
-          center={[end[1], end[0]]}
-          radius={8}
-          pathOptions={{ color: "#be123c", fillColor: "#be123c", fillOpacity: 0.9 }}
-        />
-      ) : null}
-      </MapContainer>
+        {end ? (
+          <CircleMarker
+            center={[end[1], end[0]]}
+            radius={8}
+            pathOptions={{ color: "#be123c", fillColor: "#be123c", fillOpacity: 0.9 }}
+          />
+        ) : null}
+
+        {/* Current position marker with heading cone */}
+        {navMode && navPosition && (
+          <Marker
+            position={navPosition}
+            icon={makeNavIcon(navHeading ?? 0)}
+            zIndexOffset={500}
+          />
+        )}
+        </MapContainer>
+      </div>
     </div>
   );
 }

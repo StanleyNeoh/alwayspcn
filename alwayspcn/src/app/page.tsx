@@ -9,6 +9,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useAdvancedSettings } from "@/hooks/use-advanced-settings";
 import { useLocationInput } from "@/hooks/use-location-input";
 import { useRouteEngine } from "@/hooks/use-route-engine";
+import { useNavigation } from "@/hooks/use-navigation";
 import { DraggableCard } from "@/components/panels/DraggableCard";
 import { RoutePanel } from "@/components/panels/RoutePanel";
 import { AdvancedPanel } from "@/components/panels/AdvancedPanel";
@@ -29,6 +30,8 @@ export default function Home() {
   const advSettings = useAdvancedSettings();
 
   const location = useLocationInput({ onMessage: setMessage });
+
+  const navigation = useNavigation();
 
   const engine = useRouteEngine({
     start: location.start,
@@ -68,6 +71,9 @@ export default function Home() {
           pcnGeojson={displayPcnGeojson}
           isDark={isDark}
           toggleDark={toggleDark}
+          navMode={navigation.navMode}
+          navPosition={navigation.navPosition}
+          navHeading={navigation.navHeading}
         />
       </div>
 
@@ -90,6 +96,19 @@ export default function Home() {
           pickMode={location.pickMode}
           onPickModeChange={location.setPickMode}
           onMessage={setMessage}
+          isLocating={location.isLocating}
+          onLocateMe={location.setCurrentLocationAsStart}
+          navMode={navigation.navMode}
+          onNavModeToggle={() => {
+            if (navigation.navMode) {
+              navigation.stopNavigation();
+              setMessage("Navigation mode off.");
+            } else {
+              navigation.startNavigation().then(() => {
+                setMessage("Navigation mode on. Move to update your position.");
+              });
+            }
+          }}
           message={message}
           activeRoute={activeRoute}
           useServerRouting={engine.useServerRouting}

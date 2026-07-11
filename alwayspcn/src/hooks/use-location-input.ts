@@ -16,6 +16,7 @@ export function useLocationInput({ onMessage }: UseLocationInputParams) {
   const [endInput, setEndInput] = useState("1.4042,103.9021");
   const [pickMode, setPickMode] = useState<"start" | "end" | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
 
   const parseCoordInput = (text: string): Coordinate | null => {
     const [latStr, lngStr] = text.split(",").map((part) => part.trim());
@@ -69,6 +70,29 @@ export function useLocationInput({ onMessage }: UseLocationInputParams) {
     }
   };
 
+  const setCurrentLocationAsStart = async () => {
+    if (!navigator.geolocation) {
+      onMessage("Geolocation is not supported by your browser.");
+      return;
+    }
+    setIsLocating(true);
+    onMessage("Getting your current location…");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coord: Coordinate = [pos.coords.longitude, pos.coords.latitude];
+        setStart(coord);
+        setStartInput(`${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`);
+        onMessage("Current location set as start. Routing…");
+        setIsLocating(false);
+      },
+      (err) => {
+        onMessage(`Could not get location: ${err.message}`);
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
+    );
+  };
+
   const onMapPick = (point: Coordinate) => {
     if (!pickMode) return;
     setPickMode(null);
@@ -93,7 +117,9 @@ export function useLocationInput({ onMessage }: UseLocationInputParams) {
     pickMode,
     setPickMode,
     isGeocoding,
+    isLocating,
     applyLocations,
+    setCurrentLocationAsStart,
     onMapPick,
     handleStartSelect,
     handleEndSelect,
