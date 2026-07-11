@@ -21,8 +21,15 @@ const RouteMap = dynamic(
 
 export default function Home() {
   const [message, setMessage] = useState("Load the network and set two points to route.");
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [advOpen, setAdvOpen] = useState(false);
+
+  const toggleRoutePanel = () => {
+    setPanelOpen((v) => { if (!v) setAdvOpen(false); return !v; });
+  };
+  const toggleAdvPanel = () => {
+    setAdvOpen((v) => { if (!v) setPanelOpen(false); return !v; });
+  };
   const [showPcnOverlay, setShowPcnOverlay] = useState(false);
 
   const { isDark, toggleDark } = useTheme();
@@ -77,12 +84,15 @@ export default function Home() {
         />
       </div>
 
+      {/* Right-side panel stack — anchored below the top-right map controls */}
+      <div className="absolute right-3 top-[52px] z-[1000] flex w-[min(310px,calc(100vw-24px))] flex-col gap-2">
+
       {/* Route planner panel */}
       <DraggableCard
         title="Route planner"
-        initialPos={{ x: 16, y: 16 }}
+        locked
         open={panelOpen}
-        onToggle={() => setPanelOpen((v) => !v)}
+        onToggle={toggleRoutePanel}
       >
         <RoutePanel
           startInput={location.startInput}
@@ -120,9 +130,9 @@ export default function Home() {
       {/* Advanced panel */}
       <DraggableCard
         title="Advanced"
-        initialPos={{ x: 16, y: 490 }}
+        locked
         open={advOpen}
-        onToggle={() => setAdvOpen((v) => !v)}
+        onToggle={toggleAdvPanel}
       >
         <AdvancedPanel
           useServerRouting={engine.useServerRouting}
@@ -146,6 +156,7 @@ export default function Home() {
         />
       </DraggableCard>
 
+      </div>
     </div>
   );
 }
