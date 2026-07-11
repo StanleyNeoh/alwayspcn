@@ -6,8 +6,7 @@ import { Loader2, Navigation2, Search } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { LocationCombobox } from "@/components/ui/location-combobox";
 import { validateGraphData } from "@/lib/graph-validation";
 import { geocodeLocation } from "@/lib/geocode";
 import { graphToPcnGeoJson, type GeoJsonCollection } from "@/lib/graph-to-geojson";
@@ -277,25 +276,33 @@ export default function Home() {
               {isLoadingRoads ? "Loading roads…" : "Load Network"}
             </button>
 
-            <div className="space-y-2">
-              <Label htmlFor="start">Start — place name or lat,lng</Label>
-              <Input
-                id="start"
-                placeholder="e.g. Bishan Park or 1.3521,103.8198"
-                value={startInput}
-                onChange={(event) => setStartInput(event.target.value)}
-              />
-            </div>
+            <LocationCombobox
+              id="start"
+              label="Start — place name or lat,lng"
+              placeholder="e.g. Bishan Park or 1.3521,103.8198"
+              value={startInput}
+              onChange={setStartInput}
+              onSelect={(coord, label) => {
+                setRoute(null);
+                setStart(coord);
+                setStartInput(label);
+                setMessage("Start location set. Routing…");
+              }}
+            />
 
-            <div className="space-y-2">
-              <Label htmlFor="end">End — place name or lat,lng</Label>
-              <Input
-                id="end"
-                placeholder="e.g. Gardens by the Bay"
-                value={endInput}
-                onChange={(event) => setEndInput(event.target.value)}
-              />
-            </div>
+            <LocationCombobox
+              id="end"
+              label="End — place name or lat,lng"
+              placeholder="e.g. Gardens by the Bay"
+              value={endInput}
+              onChange={setEndInput}
+              onSelect={(coord, label) => {
+                setRoute(null);
+                setEnd(coord);
+                setEndInput(label);
+                setMessage("End location set. Routing…");
+              }}
+            />
 
             <button
               className="inline-flex h-10 w-full items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:opacity-60"

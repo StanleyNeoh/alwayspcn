@@ -1,5 +1,8 @@
 # TODO
 
+## Completed (2026-07-11 session 3)
+- Location autocomplete dropdown for start/end inputs (Nominatim-backed, debounced, keyboard-navigable)
+
 ## Completed (2026-07-11 session 2)
 - Singapore road network overlay from Overpass API (`build:roads` script)
 - PCN routes visual overlay extracted from graph and displayed on map

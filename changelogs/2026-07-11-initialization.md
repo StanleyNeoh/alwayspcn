@@ -68,3 +68,24 @@
 - Security review subagent re-run on worker + validation changes.
 - Result: previous schema-validation finding mitigated; compute DoS risk reduced with residual low-risk fallback concern.
 - Final mitigation added: disable main-thread fallback on large graphs.
+
+---
+
+## Session 3 — Location Autocomplete Dropdown
+
+### Added
+- `alwayspcn/src/lib/geocode.ts` — added `searchLocations(query, limit)` returning up to 6 `GeocodeSuggestion` objects from Nominatim (Singapore-scoped).
+- `alwayspcn/src/components/ui/location-combobox.tsx` — new `LocationCombobox` component: debounced search (320 ms), keyboard navigation (↑↓ Enter Esc), ARIA combobox role, auto-clears on empty or raw-coord input.
+
+### Modified
+- `alwayspcn/src/app/page.tsx` — replaced plain `Input + Label` pairs for Start/End with `LocationCombobox`; selecting a suggestion directly sets the coordinate without requiring "Apply / Locate".
+
+### Validation Gate Evidence (session 3)
+- `npm run lint` — pass (after fixing `set-state-in-effect` and `aria-expanded` on textbox role)
+- `npx tsc --noEmit` — pass
+
+### Security Review Gate Evidence (session 3)
+- URL built via `URL` constructor + `searchParams.set()` — no injection risk.
+- Nominatim hostname hardcoded — no SSRF.
+- Suggestion labels rendered as React text nodes — no XSS.
+- Findings: none at HIGH confidence.

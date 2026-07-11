@@ -52,3 +52,53 @@ export async function geocodeLocation(query: string): Promise<Coordinate | null>
   }
   return [lng, latitude];
 }
+
+export type GeocodeSuggestion = {
+  label: string;
+  coordinate: Coordinate;
+};
+
+/**
+ * Search for matching place names / addresses in Singapore.
+ * Returns up to `limit` suggestions for autocomplete dropdowns.
+ */
+export async function searchLocations(
+  query: string,
+  limit = 6
+): Promise<GeocodeSuggestion[]> {
+  if (!query.trim()) return [];
+
+  const url = new URL(NOMINATIM_URL);
+  url.searchParams.set("q", query);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("countrycodes", "sg");
+  url.searchParams.set("addressdetails", "0");
+
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      headers: { "Accept-Language": "en" },
+    });
+  } catch {
+    return [];
+  }
+
+  if (!response.ok) return [];
+
+  let results: NominatimResult[];
+  try {
+    results = await response.json();
+  } catch {
+    return [];
+  }
+
+  if (!Array.isArray(results)) return [];
+
+  return results.flatMap((r) => {
+    const lng = Number.parseFloat(r.lon);
+    const lat = Number.parseFloat(r.lat);
+    if (Number.isNaN(lng) || Number.isNaN(lat)) return [];
+    return [{ label: r.display_name, coordinate: [lng, lat] as Coordinate }];
+  });
+}
