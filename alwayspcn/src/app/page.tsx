@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Navigation2, Search } from "lucide-react";
+import { Loader2, Moon, Navigation2, Search, Sun } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,15 @@ import { LocationCombobox } from "@/components/ui/location-combobox";
 import { validateGraphData } from "@/lib/graph-validation";
 import { geocodeLocation } from "@/lib/geocode";
 import { graphToPcnGeoJson, type GeoJsonCollection } from "@/lib/graph-to-geojson";
-import { computeRoute, type Coordinate, type GraphData, type RouteResult } from "@/lib/routing";
+import {
+  buildRoadGraph,
+  computeRoute,
+  computeRouteWithFallback,
+  type Coordinate,
+  type GraphData,
+  type RouteResult,
+  type RoadsGeoJson,
+} from "@/lib/routing";
 
 const RouteMap = dynamic(
   () => import("@/components/map/route-map").then((mod) => mod.RouteMap),
@@ -31,11 +39,6 @@ type WorkerResultMessage = {
   result: RouteResult;
 };
 
-type RoadsGeoJson = GeoJsonCollection & {
-  generatedAt?: string;
-  source?: string;
-};
-
 export default function Home() {
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [start, setStart] = useState<Coordinate | null>(null);
@@ -48,10 +51,29 @@ export default function Home() {
   const [roadsGeojson, setRoadsGeojson] = useState<RoadsGeoJson | null>(null);
   const [pcnGeojson, setPcnGeojson] = useState<GeoJsonCollection | null>(null);
   const [isLoadingRoads, setIsLoadingRoads] = useState(false);
+  const roadGraphRef = useRef<ReturnType<typeof buildRoadGraph> | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
+
+  const [isDark, setIsDark] = useState(false);
 
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("theme");
+    const prefersDark = stored
+      ? stored === "dark"
+      : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setIsDark(prefersDark);
+    document.documentElement.classList.toggle("dark", prefersDark);
+  }, []);
+
+  const toggleDark = () => {
+    const next = !isDark;
+    setIsDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("theme", next ? "dark" : "light");
+  };
 
   useEffect(() => {
     try {
@@ -96,7 +118,12 @@ export default function Home() {
           return;
         }
         setMessage("Worker unavailable. Running route on main thread for small graph.");
-        setRoute(computeRoute(graph, start, end));
+        const rg = roadGraphRef.current;
+        setRoute(
+          rg
+            ? computeRouteWithFallback(graph, rg, start, end)
+            : computeRoute(graph, start, end)
+        );
         return;
       }
 
@@ -189,6 +216,16 @@ export default function Home() {
       }
       const roadsData: RoadsGeoJson = await roadsResponse.json();
       setRoadsGeojson(roadsData);
+
+      // Build road graph for main-thread fallback and send to worker for fallback routing.
+      const builtRoadGraph = buildRoadGraph(roadsData);
+      roadGraphRef.current = builtRoadGraph;
+
+      const worker = workerRef.current;
+      if (worker) {
+        worker.postMessage({ type: "init_roads", roadsGeoJson: roadsData });
+      }
+
       const roadCount = Array.isArray(roadsData.features)
         ? roadsData.features.length.toLocaleString()
         : "0";
@@ -244,11 +281,19 @@ export default function Home() {
               Park connector first routing across Singapore&apos;s PCN and cycling network.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge className="bg-accent text-accent-foreground">PCN Priority Routing</Badge>
             {roadsGeojson ? (
               <Badge variant="outline">Roads overlay active</Badge>
             ) : null}
+            <button
+              type="button"
+              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              onClick={toggleDark}
+              className="ml-1 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-background/60 text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
           </div>
         </div>
       </header>

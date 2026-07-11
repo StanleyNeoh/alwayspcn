@@ -7,6 +7,13 @@ import type { GeoJsonCollection } from "@/lib/graph-to-geojson";
 
 type Coordinate = [number, number];
 
+// A permissive GeoJSON collection type suitable for both PCN and roads overlays
+type AnyGeoJsonCollection = {
+  type: "FeatureCollection";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  features: Array<{ type: "Feature"; properties: Record<string, any>; geometry: unknown }>;
+};
+
 // Roads overlay — one colour per OSM highway classification
 const ROAD_STYLE: Record<string, { color: string; weight: number; opacity: number }> = {
   motorway:      { color: "#e8003d", weight: 3, opacity: 0.7 },
@@ -31,7 +38,7 @@ type RouteMapProps = {
   start: Coordinate | null;
   end: Coordinate | null;
   onMapPick: (point: Coordinate) => void;
-  roadsGeojson?: GeoJsonCollection | null;
+  roadsGeojson?: AnyGeoJsonCollection | null;
   pcnGeojson?: GeoJsonCollection | null;
 };
 
