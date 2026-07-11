@@ -1,10 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, GripHorizontal, Layers, Loader2, MapPin, Moon, Navigation, Search, Sun } from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, GripHorizontal, Layers, Loader2, MapPin, Navigation, Search } from "lucide-react";
 import { LocationCombobox } from "@/components/ui/location-combobox";
 import { validateGraphData } from "@/lib/graph-validation";
 import { geocodeLocation } from "@/lib/geocode";
@@ -18,6 +16,7 @@ import {
   type RouteResult,
   type RoadsGeoJson,
 } from "@/lib/routing";
+import { clusterPcnGeoJson, clusterRoadsGeoJson } from "@/lib/cluster-graph";
 import { cn } from "@/lib/utils";
 
 const RouteMap = dynamic(
@@ -88,7 +87,7 @@ export default function Home() {
   const [end, setEnd] = useState<Coordinate | null>(null);
   const [startInput, setStartInput] = useState("1.3434,103.8247");
   const [endInput, setEndInput] = useState("1.4042,103.9021");
-  const [pickMode, setPickMode] = useState<"start" | "end">("start");
+  const [pickMode, setPickMode] = useState<"start" | "end" | null>(null);
   const [message, setMessage] = useState("Load the network and set two points to route.");
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [roadsGeojson, setRoadsGeojson] = useState<RoadsGeoJson | null>(null);
@@ -99,14 +98,16 @@ export default function Home() {
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
   const [isDark, setIsDark] = useState(false);
-  const [brandOpen, setBrandOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [advOpen, setAdvOpen] = useState(true);
+  const [clusterEnabled, setClusterEnabled] = useState(false);
+  const [clusterThreshold, setClusterThreshold] = useState(10);
 
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
 
-  const brand = useDraggable({ x: 16, y: 16 });
-  const panel = useDraggable({ x: 16, y: 72 });
+  const panel = useDraggable({ x: 16, y: 16 });
+  const adv = useDraggable({ x: 16, y: 490 });
 
   useEffect(() => {
     const stored = localStorage.getItem("theme");
@@ -191,17 +192,18 @@ export default function Home() {
   }, [graph, start, end]);
 
   const onMapPick = (point: Coordinate) => {
+    if (!pickMode) return;
+    setRoute(null);
+    setPickMode(null);
     if (pickMode === "start") {
-      setRoute(null);
       setStart(point);
       setStartInput(`${point[1].toFixed(6)},${point[0].toFixed(6)}`);
-      setMessage("Start point captured from map.");
-      return;
+      setMessage("Start point set.");
+    } else {
+      setEnd(point);
+      setEndInput(`${point[1].toFixed(6)},${point[0].toFixed(6)}`);
+      setMessage("End point set.");
     }
-    setRoute(null);
-    setEnd(point);
-    setEndInput(`${point[1].toFixed(6)},${point[0].toFixed(6)}`);
-    setMessage("End point captured from map.");
   };
 
   const parseCoordInput = (text: string): Coordinate | null => {
@@ -315,60 +317,37 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void loadGraph(); }, []);
 
+  const displayPcnGeojson = useMemo(() => {
+    if (!pcnGeojson || !showPcnOverlay) return null;
+    if (clusterEnabled && clusterThreshold > 0)
+      return clusterPcnGeoJson(pcnGeojson, clusterThreshold);
+    return pcnGeojson;
+  }, [pcnGeojson, showPcnOverlay, clusterEnabled, clusterThreshold]);
+
+  const displayRoadsGeojson = useMemo(() => {
+    if (!roadsGeojson || !showRoadsOverlay) return null;
+    if (clusterEnabled && clusterThreshold > 0)
+      return clusterRoadsGeoJson(roadsGeojson, clusterThreshold);
+    return roadsGeojson;
+  }, [roadsGeojson, showRoadsOverlay, clusterEnabled, clusterThreshold]);
+
   const activeRoute = graph && start && end ? route : null;
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
 
       {/* ── Full-screen map ───────────────────────────────────────── */}
-      <div className="absolute inset-0">
+      <div className={cn("absolute inset-0", pickMode ? "[&_.leaflet-container]:cursor-crosshair" : "")}>
         <RouteMap
           segments={activeRoute?.found ? activeRoute.segments : []}
           start={start}
           end={end}
           onMapPick={onMapPick}
-          roadsGeojson={showRoadsOverlay ? roadsGeojson : null}
-          pcnGeojson={showPcnOverlay ? pcnGeojson : null}
+          roadsGeojson={displayRoadsGeojson}
+          pcnGeojson={displayPcnGeojson}
+          isDark={isDark}
+          toggleDark={toggleDark}
         />
-      </div>
-
-      {/* ── Brand card ────────────────────────────────────────────── */}
-      <div
-        style={{ transform: `translate(${brand.pos.x}px, ${brand.pos.y}px)` }}
-        className="absolute left-0 top-0 z-[1000] select-none"
-      >
-        <div
-          {...brand.dragHandleProps}
-          className="flex cursor-grab items-center gap-2.5 rounded-2xl border border-zinc-200/70 bg-white/95 px-4 py-2.5 shadow-lg backdrop-blur-xl transition-shadow hover:shadow-xl active:cursor-grabbing dark:border-zinc-700/70 dark:bg-zinc-950/95"
-        >
-          <h1 className="font-heading text-sm font-semibold tracking-tight text-foreground">
-            AlwaysPCN
-          </h1>
-          {brandOpen && (
-            <>
-              <Badge className="bg-accent px-1.5 py-0 text-[10px] text-accent-foreground">PCN</Badge>
-              <div className="h-3.5 w-px bg-border/60" />
-              <button
-                type="button"
-                aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={toggleDark}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            aria-label={brandOpen ? "Collapse" : "Expand"}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setBrandOpen((v) => !v)}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            {brandOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-        </div>
       </div>
 
       {/* ── Route panel ──────────────────────────────────────────── */}
@@ -394,40 +373,7 @@ export default function Home() {
               </span>
             </div>
             <div className="flex items-center gap-1">
-              {pcnGeojson && panelOpen ? (
-                <button
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => setShowPcnOverlay((v) => !v)}
-                  aria-pressed={showPcnOverlay}
-                  title={showPcnOverlay ? "Hide PCN overlay" : "Show PCN overlay"}
-                  className={cn(
-                    "flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-medium transition-colors",
-                    showPcnOverlay
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <Layers className="h-2.5 w-2.5" />PCN
-                </button>
-              ) : null}
-              {roadsGeojson && panelOpen ? (
-                <button
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => setShowRoadsOverlay((v) => !v)}
-                  aria-pressed={showRoadsOverlay}
-                  title={showRoadsOverlay ? "Hide roads overlay" : "Show roads overlay"}
-                  className={cn(
-                    "flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-medium transition-colors",
-                    showRoadsOverlay
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <Layers className="h-2.5 w-2.5" />Roads
-                </button>
-              ) : null}
+
               <button
                 type="button"
                 aria-label={panelOpen ? "Collapse panel" : "Expand panel"}
@@ -497,8 +443,12 @@ export default function Home() {
               >
                 <button
                   type="button"
-                  title="Click map to set start"
-                  onClick={() => setPickMode("start")}
+                  title={pickMode === "start" ? "Cancel — click to deactivate" : "Click to pick start on map"}
+                  onClick={() => {
+                    const next = pickMode === "start" ? null : "start";
+                    setPickMode(next);
+                    if (next === "start") setMessage("Click on the map to set the start point.");
+                  }}
                   className={cn(
                     "flex items-center gap-1 px-2.5 py-2 transition-colors",
                     pickMode === "start"
@@ -511,8 +461,12 @@ export default function Home() {
                 <div className="w-px bg-border/60" />
                 <button
                   type="button"
-                  title="Click map to set end"
-                  onClick={() => setPickMode("end")}
+                  title={pickMode === "end" ? "Cancel — click to deactivate" : "Click to pick end on map"}
+                  onClick={() => {
+                    const next = pickMode === "end" ? null : "end";
+                    setPickMode(next);
+                    if (next === "end") setMessage("Click on the map to set the end point.");
+                  }}
                   className={cn(
                     "flex items-center gap-1 px-2.5 py-2 transition-colors",
                     pickMode === "end"
@@ -602,6 +556,133 @@ export default function Home() {
             ) : null}
 
           </div>}
+        </div>
+      </div>
+
+      {/* ── Advanced card ─────────────────────────────────────── */}
+      <div
+        style={{ transform: `translate(${adv.pos.x}px, ${adv.pos.y}px)` }}
+        className="absolute left-0 top-0 z-[1000] w-[310px] select-none"
+      >
+        <div className="rounded-2xl border border-zinc-200/70 bg-white/95 shadow-xl backdrop-blur-xl dark:border-zinc-700/70 dark:bg-zinc-950/95">
+
+          {/* Drag handle */}
+          <div
+            {...adv.dragHandleProps}
+            className={cn(
+              "flex cursor-grab items-center justify-between gap-2 border-b border-border/40 bg-muted/20 px-4 py-2 active:cursor-grabbing",
+              advOpen ? "rounded-t-2xl" : "rounded-2xl border-b-0"
+            )}
+          >
+            <div className="flex items-center gap-1.5">
+              <GripHorizontal className="h-3.5 w-3.5 text-muted-foreground/50" />
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                Advanced
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-label={advOpen ? "Collapse advanced" : "Expand advanced"}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setAdvOpen((v) => !v)}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {advOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+
+          {/* Card content */}
+          {advOpen && (
+            <div className="space-y-4 p-4">
+
+              {/* Overlays */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                  Overlays
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPcnOverlay((v) => !v)}
+                    disabled={!pcnGeojson}
+                    aria-pressed={showPcnOverlay}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
+                      showPcnOverlay
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <Layers className="h-3 w-3" />PCN
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowRoadsOverlay((v) => !v)}
+                    disabled={!roadsGeojson}
+                    aria-pressed={showRoadsOverlay}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
+                      showRoadsOverlay
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <Layers className="h-3 w-3" />Roads
+                  </button>
+                </div>
+              </div>
+
+              <div className="h-px bg-border/40" />
+
+              {/* Clustering */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                    Vertex Clustering
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setClusterEnabled((v) => !v)}
+                    aria-pressed={clusterEnabled}
+                    className={cn(
+                      "rounded-lg px-2 py-0.5 text-[10px] font-medium transition-colors",
+                      clusterEnabled
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {clusterEnabled ? "On" : "Off"}
+                  </button>
+                </div>
+
+                {clusterEnabled && (
+                  <div className="space-y-1.5 pt-0.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Threshold</span>
+                      <span className="font-medium tabular-nums">{clusterThreshold} m</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={200}
+                      step={1}
+                      value={clusterThreshold}
+                      onChange={(e) => setClusterThreshold(Number(e.target.value))}
+                      className="w-full accent-primary"
+                    />
+                    <div className="flex justify-between text-[9px] text-muted-foreground/50">
+                      <span>1 m</span>
+                      <span>200 m</span>
+                    </div>
+                    <p className="text-[10px] leading-relaxed text-muted-foreground/70">
+                      Vertices within {clusterThreshold} m of the same drifting centroid are merged into one. Self-loops are dropped. Applied to both overlays.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          )}
         </div>
       </div>
 

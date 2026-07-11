@@ -1,7 +1,9 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
+import { useState } from "react";
 
+import { Moon, Sun } from "lucide-react";
 import { CircleMarker, GeoJSON, MapContainer, Polyline, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
 import type { GeoJsonCollection } from "@/lib/graph-to-geojson";
 import type { RouteSegment } from "@/lib/routing";
@@ -46,6 +48,26 @@ function routeSegmentStyle(kind: string): { color: string; weight: number; opaci
   return ROUTE_OFF_PCN;
 }
 
+type MapStyleKey = "street" | "satellite" | "map";
+
+const MAP_STYLES: Record<MapStyleKey, { label: string; url: string; attribution: string }> = {
+  street: {
+    label: "Street",
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  satellite: {
+    label: "Satellite",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution: "Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, GIS User Community",
+  },
+  map: {
+    label: "Map",
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+};
+
 type RouteMapProps = {
   segments: RouteSegment[];
   start: Coordinate | null;
@@ -53,6 +75,8 @@ type RouteMapProps = {
   onMapPick: (point: Coordinate) => void;
   roadsGeojson?: AnyGeoJsonCollection | null;
   pcnGeojson?: GeoJsonCollection | null;
+  isDark?: boolean;
+  toggleDark?: () => void;
 };
 
 function ClickCapture({ onMapPick }: { onMapPick: (point: Coordinate) => void }) {
@@ -71,7 +95,11 @@ export function RouteMap({
   onMapPick,
   roadsGeojson,
   pcnGeojson,
+  isDark,
+  toggleDark,
 }: RouteMapProps) {
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>("street");
+  const tileConfig = MAP_STYLES[mapStyle];
   // Group consecutive same-kind AND same-name segments into polylines
   type SegGroup = { kind: string; name: string; distanceMeters: number; positions: [number, number][] };
   const segGroups: SegGroup[] = [];
@@ -115,11 +143,50 @@ export function RouteMap({
   };
 
   return (
-    <MapContainer center={[1.3521, 103.8198]} zoom={12} className="h-full w-full">
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+    <div className="relative h-full w-full">
+      {/* Top-right controls: brand + map style switcher */}
+      <div className="absolute right-3 top-3 z-[1000] flex items-center gap-2">
+        {/* Brand card */}
+        <div className="flex items-center gap-2 overflow-hidden rounded-md border border-gray-200 bg-white/95 px-3 py-1.5 shadow-md backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/95">
+          <span className="text-xs font-semibold tracking-tight text-gray-900 dark:text-gray-100">AlwaysPCN</span>
+          <span className="rounded bg-teal-100 px-1.5 py-0 text-[10px] font-medium text-teal-700 dark:bg-teal-900/60 dark:text-teal-300">PCN</span>
+          <div className="h-3.5 w-px bg-gray-200 dark:bg-zinc-600" />
+          {toggleDark && (
+            <button
+              type="button"
+              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              onClick={toggleDark}
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+            >
+              {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+            </button>
+          )}
+        </div>
+
+        {/* Map style switcher */}
+        <div className="flex divide-x divide-gray-200 overflow-hidden rounded-md border border-gray-200 shadow-md dark:divide-zinc-700 dark:border-zinc-700">
+          {(Object.keys(MAP_STYLES) as MapStyleKey[]).map((key) => (
+            <button
+              key={key}
+              onClick={() => setMapStyle(key)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                mapStyle === key
+                  ? "bg-white text-gray-900 dark:bg-zinc-800 dark:text-gray-100"
+                  : "bg-white/80 text-gray-500 hover:bg-white hover:text-gray-700 dark:bg-zinc-900/80 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              }`}
+            >
+              {MAP_STYLES[key].label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <MapContainer center={[1.3521, 103.8198]} zoom={12} className="h-full w-full">
+        <TileLayer
+          key={mapStyle}
+          attribution={tileConfig.attribution}
+          url={tileConfig.url}
+        />
       <ClickCapture onMapPick={onMapPick} />
 
       {/* Singapore roads overlay — rendered below PCN */}
@@ -186,6 +253,7 @@ export function RouteMap({
           pathOptions={{ color: "#be123c", fillColor: "#be123c", fillOpacity: 0.9 }}
         />
       ) : null}
-    </MapContainer>
+      </MapContainer>
+    </div>
   );
 }
