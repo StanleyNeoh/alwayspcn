@@ -15,6 +15,7 @@ export type RouteSegment = {
   from: Coordinate;
   to: Coordinate;
   kind: string;
+  name?: string;
 };
 
 export type RouteResult = {
@@ -213,12 +214,12 @@ function reconstructPath(
     const to = nodePath[i];
     const edge = adj[from].find(([next]) => next === to);
     if (!edge) continue;
-    const [, distance, kind] = edge;
+    const [, distance, kind, name] = edge;
     totalDistance += distance;
     if (kind === "park_connector" || kind === "park_path") {
       connectorDistance += distance;
     }
-    segments.push({ from: nodes[from], to: nodes[to], kind });
+    segments.push({ from: nodes[from], to: nodes[to], kind, name: name ?? undefined });
   }
 
   const path = nodePath.map((idx) => nodes[idx]);

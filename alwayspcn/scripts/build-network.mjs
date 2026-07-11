@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const srcKml = path.resolve(process.cwd(), "..", "data", "doc.kml");
-const outDir = path.resolve(process.cwd(), "public", "data");
+const outDir = path.resolve(process.cwd(), "..", "data");
 const outFile = path.resolve(outDir, "network.json");
 
 const parser = new XMLParser({

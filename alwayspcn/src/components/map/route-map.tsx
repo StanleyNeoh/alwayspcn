@@ -2,7 +2,7 @@
 
 import "leaflet/dist/leaflet.css";
 
-import { CircleMarker, GeoJSON, MapContainer, Polyline, TileLayer, useMapEvents } from "react-leaflet";
+import { CircleMarker, GeoJSON, MapContainer, Polyline, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
 import type { GeoJsonCollection } from "@/lib/graph-to-geojson";
 import type { RouteSegment } from "@/lib/routing";
 
@@ -72,19 +72,47 @@ export function RouteMap({
   roadsGeojson,
   pcnGeojson,
 }: RouteMapProps) {
-  // Group consecutive same-kind segments into polylines
-  type SegGroup = { kind: string; positions: [number, number][] };
+  // Group consecutive same-kind AND same-name segments into polylines
+  type SegGroup = { kind: string; name: string; distanceMeters: number; positions: [number, number][] };
   const segGroups: SegGroup[] = [];
   for (const seg of segments) {
     const fromLL: [number, number] = [seg.from[1], seg.from[0]];
     const toLL: [number, number] = [seg.to[1], seg.to[0]];
+    const segName = seg.name ?? "";
     const last = segGroups[segGroups.length - 1];
-    if (last && last.kind === seg.kind) {
+    if (last && last.kind === seg.kind && last.name === segName) {
       last.positions.push(toLL);
+      last.distanceMeters += haversineMeters(seg.from, seg.to);
     } else {
-      segGroups.push({ kind: seg.kind, positions: [fromLL, toLL] });
+      segGroups.push({ kind: seg.kind, name: segName, distanceMeters: haversineMeters(seg.from, seg.to), positions: [fromLL, toLL] });
     }
   }
+
+  function haversineMeters(a: [number, number], b: [number, number]): number {
+    const toRad = Math.PI / 180;
+    const dLat = (b[1] - a[1]) * toRad;
+    const dLng = (b[0] - a[0]) * toRad;
+    const lat1 = a[1] * toRad;
+    const lat2 = b[1] * toRad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 6371000 * (2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
+  }
+
+  const KIND_LABEL: Record<string, string> = {
+    park_connector: "Park Connector",
+    park_path: "Park Path",
+    rail_corridor: "Rail Corridor",
+    cycling_path: "Cycling Path",
+    motorway: "Motorway",
+    trunk: "Trunk Road",
+    primary: "Primary Road",
+    secondary: "Secondary Road",
+    tertiary: "Tertiary Road",
+    residential: "Residential Road",
+    unclassified: "Road",
+    bridge: "Bridge",
+    other: "Path",
+  };
 
   return (
     <MapContainer center={[1.3521, 103.8198]} zoom={12} className="h-full w-full rounded-2xl">
@@ -126,7 +154,21 @@ export function RouteMap({
           key={`route-seg-${i}`}
           positions={group.positions}
           pathOptions={routeSegmentStyle(group.kind)}
-        />
+        >
+          <Tooltip sticky direction="top" offset={[0, -4]} opacity={0.95}>
+            <div className="text-xs leading-snug">
+              <div className="font-semibold text-sm">
+                {group.name || KIND_LABEL[group.kind] || group.kind}
+              </div>
+              <div className="text-gray-500">{KIND_LABEL[group.kind] ?? group.kind}</div>
+              <div className="mt-0.5 text-gray-600">
+                {group.distanceMeters >= 1000
+                  ? `${(group.distanceMeters / 1000).toFixed(2)} km`
+                  : `${Math.round(group.distanceMeters)} m`}
+              </div>
+            </div>
+          </Tooltip>
+        </Polyline>
       ))}
 
       {start ? (
