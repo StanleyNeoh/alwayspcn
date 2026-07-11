@@ -3,7 +3,10 @@
 ## In Progress
 - None
 
-## Completed (2026-07-11 session 4 — Re-init + Docs Expansion)
+## Completed (2026-07-11 session 5)
+- Map style switcher: Street (OSM), Satellite (ESRI), Map (CartoDB Positron) — floating button group top-right of map
+
+
 - Added DeepWiki MCP to `mcp.json`
 - Updated `AGENTS.md` MCP operational requirement with DeepWiki + Context7 references
 - Expanded `docs/PRD.md` to full implementation-ready quality (epics, stories, ACs, NFRs, risks, v2 backlog)

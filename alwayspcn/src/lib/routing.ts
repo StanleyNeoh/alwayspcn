@@ -37,26 +37,37 @@ export type RoadsGeoJson = {
   }>;
 };
 
-// Cost multipliers per segment kind.
-// PCN kinds are cheap; road kinds are expensive so the router strongly prefers
-// PCN paths and only routes via roads when no PCN connection exists.
-const FACTOR: Record<string, number> = {
-  park_connector: 0.72,
-  park_path: 0.82,
-  rail_corridor: 0.9,
-  cycling_path: 1,
-  other: 1.08,
-  // Road kinds — penalised
-  motorway: 3.0,
-  trunk: 2.5,
-  primary: 2.0,
-  secondary: 2.2,
-  tertiary: 2.3,
-  residential: 2.5,
-  unclassified: 2.5,
-  // Synthetic edges bridging PCN nodes to the road network
-  bridge: 1.5,
+export type RouteWeights = {
+  pcn: number;
+  future_network: number;
+  cycling_path: number;
 };
+
+export const DEFAULT_ROUTE_WEIGHTS: RouteWeights = {
+  pcn: 0.5,
+  future_network: 0.75,
+  cycling_path: 1.0,
+};
+
+// Build a full factor map merging user weights with fixed road/bridge penalties.
+function buildFactor(w: RouteWeights): Record<string, number> {
+  return {
+    pcn: w.pcn,
+    future_network: w.future_network,
+    cycling_path: w.cycling_path,
+    other: 1.08,
+    // Road kinds — penalised
+    motorway: 3.0,
+    trunk: 2.5,
+    primary: 2.0,
+    secondary: 2.2,
+    tertiary: 2.3,
+    residential: 2.5,
+    unclassified: 2.5,
+    // Synthetic edges bridging PCN nodes to the road network
+    bridge: 1.5,
+  };
+}
 
 // Only major roads are used for the fallback bridge graph; residential streets
 // are excluded to keep the graph small and route quality reasonable.
@@ -153,7 +164,8 @@ function dijkstra(
   nodes: Coordinate[],
   adj: Array<Array<[number, number, string, string]>>,
   startIdx: number,
-  endIdx: number
+  endIdx: number,
+  factor: Record<string, number>
 ): { dist: Float64Array; prev: Int32Array } {
   const n = nodes.length;
   const dist = new Float64Array(n).fill(Number.POSITIVE_INFINITY);
@@ -173,8 +185,8 @@ function dijkstra(
 
     for (const [to, distance, kind] of adj[u]) {
       if (settled[to]) continue;
-      const factor = FACTOR[kind] ?? FACTOR.other;
-      const newCost = cost + distance * factor;
+      const weight = factor[kind] ?? factor.other;
+      const newCost = cost + distance * weight;
       if (newCost < dist[to]) {
         dist[to] = newCost;
         prev[to] = u;
@@ -216,7 +228,7 @@ function reconstructPath(
     if (!edge) continue;
     const [, distance, kind, name] = edge;
     totalDistance += distance;
-    if (kind === "park_connector" || kind === "park_path") {
+    if (kind === "pcn" || kind === "future_network" || kind === "cycling_path") {
       connectorDistance += distance;
     }
     segments.push({ from: nodes[from], to: nodes[to], kind, name: name ?? undefined });
@@ -240,7 +252,8 @@ function reconstructPath(
 export function computeRoute(
   graph: GraphData,
   start: Coordinate,
-  end: Coordinate
+  end: Coordinate,
+  weights?: RouteWeights
 ): RouteResult {
   const startNode = findNearestNode(graph, start);
   const endNode = findNearestNode(graph, end);
@@ -249,7 +262,8 @@ export function computeRoute(
     return { found: false, path: [], segments: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
   }
 
-  const { dist, prev } = dijkstra(graph.nodes, graph.adj, startNode.index, endNode.index);
+  const factor = buildFactor(weights ?? DEFAULT_ROUTE_WEIGHTS);
+  const { dist, prev } = dijkstra(graph.nodes, graph.adj, startNode.index, endNode.index, factor);
 
   if (!Number.isFinite(dist[endNode.index])) {
     return { found: false, path: [], segments: [], distanceMeters: 0, connectorShare: 0, usesFallback: false };
@@ -383,10 +397,11 @@ export function computeRouteWithFallback(
   pcnGraph: GraphData,
   roadGraph: GraphData,
   start: Coordinate,
-  end: Coordinate
+  end: Coordinate,
+  weights?: RouteWeights
 ): RouteResult {
   // Fast path: PCN-only
-  const pcnResult = computeRoute(pcnGraph, start, end);
+  const pcnResult = computeRoute(pcnGraph, start, end, weights);
   if (pcnResult.found) return pcnResult;
 
   // Build merged graph: PCN nodes (0..p-1) followed by road nodes (p..p+r-1)
@@ -437,7 +452,8 @@ export function computeRouteWithFallback(
     mergedNodes,
     mergedAdj,
     startNode.index,
-    endNode.index
+    endNode.index,
+    buildFactor(weights ?? DEFAULT_ROUTE_WEIGHTS)
   );
 
   if (!Number.isFinite(mergedDist[endNode.index])) {

@@ -13,10 +13,9 @@ const parser = new XMLParser({
 });
 
 const FACTOR = {
-  park_connector: 0.72,
-  park_path: 0.82,
-  rail_corridor: 0.9,
-  cycling_path: 1,
+  pcn: 0.5,
+  future_network: 0.75,
+  cycling_path: 1.0,
   other: 1.08,
 };
 
@@ -64,32 +63,10 @@ function parseCoordinates(raw) {
     .filter(Boolean);
 }
 
-function classifySegment(layerName, placemarkName, styleUrl) {
-  const layer = (layerName || "").toLowerCase();
-  const name = (placemarkName || "").toLowerCase();
-  const style = (styleUrl || "").toLowerCase();
-
-  if (layer.includes("cycling")) {
-    return "cycling_path";
-  }
-  if (
-    style.includes("0288d1") ||
-    name.includes(" pc") ||
-    name.includes("park connector") ||
-    style.includes("3949ab") ||
-    style.includes("01579b")
-  ) {
-    return "park_connector";
-  }
-  if (style.includes("7cb342") || name.includes("park path")) {
-    return "park_path";
-  }
-  if (style.includes("f9a825") || name.includes("rail corridor")) {
-    return "rail_corridor";
-  }
-  if (style.includes("a52714") || name.includes("cycling path")) {
-    return "cycling_path";
-  }
+function classifyByFolder(layerName) {
+  if (layerName === "Park Connector Network") return "pcn";
+  if (layerName === "Future Network") return "future_network";
+  if (layerName === "Cycling Path Network") return "cycling_path";
   return "other";
 }
 
@@ -97,7 +74,7 @@ const xml = fs.readFileSync(srcKml, "utf8");
 const doc = parser.parse(xml);
 const folders = toArray(doc?.kml?.Document?.Folder);
 
-const layerWhitelist = new Set(["Park Connector Network", "Cycling Path Network"]);
+const layerWhitelist = new Set(["Park Connector Network", "Future Network", "Cycling Path Network"]);
 
 const nodes = [];
 const nodeIndexByKey = new Map();
@@ -139,7 +116,7 @@ for (const folder of folders) {
       continue;
     }
     const segmentName = placemark?.name || "Unnamed";
-    const kind = classifySegment(layerName, segmentName, placemark?.styleUrl);
+    const kind = classifyByFolder(layerName);
 
     for (let i = 1; i < points.length; i += 1) {
       const a = points[i - 1];

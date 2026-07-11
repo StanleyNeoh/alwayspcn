@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Bricolage_Grotesque, IBM_Plex_Mono, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 
@@ -35,6 +36,15 @@ export default function RootLayout({
       lang="en"
       className={`${display.variable} ${body.variable} ${mono.variable} h-full antialiased`}
     >
+      <head>
+        {process.env.NODE_ENV === "development" && (
+          <Script
+            src="//unpkg.com/react-grab/dist/index.global.js"
+            crossOrigin="anonymous"
+            strategy="beforeInteractive"
+          />
+        )}
+      </head>
       <body className="h-full overflow-hidden">{children}</body>
     </html>
   );

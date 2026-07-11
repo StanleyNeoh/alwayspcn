@@ -6,17 +6,17 @@ import { ChevronDown, ChevronUp, GripHorizontal, Layers, Loader2, MapPin, Naviga
 import { LocationCombobox } from "@/components/ui/location-combobox";
 import { validateGraphData } from "@/lib/graph-validation";
 import { geocodeLocation } from "@/lib/geocode";
-import { graphToPcnGeoJson, type GeoJsonCollection } from "@/lib/graph-to-geojson";
+import { graphToAllEdgesGeoJson, type GeoJsonCollection } from "@/lib/graph-to-geojson";
 import {
-  buildRoadGraph,
   computeRoute,
-  computeRouteWithFallback,
+  DEFAULT_ROUTE_WEIGHTS,
   type Coordinate,
   type GraphData,
   type RouteResult,
+  type RouteWeights,
   type RoadsGeoJson,
 } from "@/lib/routing";
-import { clusterPcnGeoJson, clusterRoadsGeoJson } from "@/lib/cluster-graph";
+import { buildMergedGraph } from "@/lib/cluster-graph";
 import { cn } from "@/lib/utils";
 
 const RouteMap = dynamic(
@@ -91,17 +91,17 @@ export default function Home() {
   const [message, setMessage] = useState("Load the network and set two points to route.");
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [roadsGeojson, setRoadsGeojson] = useState<RoadsGeoJson | null>(null);
-  const [pcnGeojson, setPcnGeojson] = useState<GeoJsonCollection | null>(null);
   const [showPcnOverlay, setShowPcnOverlay] = useState(false);
-  const [showRoadsOverlay, setShowRoadsOverlay] = useState(false);
-  const roadGraphRef = useRef<ReturnType<typeof buildRoadGraph> | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [activeGraph, setActiveGraph] = useState<GraphData | null>(null);
+  const [graphBuilding, setGraphBuilding] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [advOpen, setAdvOpen] = useState(true);
   const [clusterEnabled, setClusterEnabled] = useState(false);
   const [clusterThreshold, setClusterThreshold] = useState(10);
+  const [routeWeights, setRouteWeights] = useState<RouteWeights>(DEFAULT_ROUTE_WEIGHTS);
 
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
@@ -116,7 +116,32 @@ export default function Home() {
       : window.matchMedia("(prefers-color-scheme: dark)").matches;
     setIsDark(prefersDark);
     document.documentElement.classList.toggle("dark", prefersDark);
+
+    // Restore advanced settings
+    try {
+      const adv = localStorage.getItem("alwayspcn_adv");
+      if (adv) {
+        const parsed = JSON.parse(adv) as {
+          clusterEnabled?: boolean;
+          clusterThreshold?: number;
+          weights?: RouteWeights;
+        };
+        if (typeof parsed.clusterEnabled === "boolean") setClusterEnabled(parsed.clusterEnabled);
+        if (typeof parsed.clusterThreshold === "number") setClusterThreshold(parsed.clusterThreshold);
+        if (parsed.weights) setRouteWeights({ ...DEFAULT_ROUTE_WEIGHTS, ...parsed.weights });
+      }
+    } catch {
+      // ignore malformed storage
+    }
   }, []);
+
+  // Persist advanced settings whenever they change
+  useEffect(() => {
+    localStorage.setItem(
+      "alwayspcn_adv",
+      JSON.stringify({ clusterEnabled, clusterThreshold, weights: routeWeights })
+    );
+  }, [clusterEnabled, clusterThreshold, routeWeights]);
 
   const toggleDark = () => {
     const next = !isDark;
@@ -151,7 +176,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!graph || !start || !end) {
+    if (!activeGraph || !start || !end) {
       return;
     }
 
@@ -161,35 +186,31 @@ export default function Home() {
       const worker = workerRef.current;
 
       if (!worker) {
-        if (graph.nodes.length > MAIN_THREAD_FALLBACK_NODE_LIMIT) {
+        if (activeGraph.meta.nodes > MAIN_THREAD_FALLBACK_NODE_LIMIT) {
           setMessage(
             "Worker unavailable and graph is large. Routing paused to prevent UI freeze."
           );
           return;
         }
         setMessage("Worker unavailable. Running route on main thread for small graph.");
-        const rg = roadGraphRef.current;
-        setRoute(
-          rg
-            ? computeRouteWithFallback(graph, rg, start, end)
-            : computeRoute(graph, start, end)
-        );
+        setRoute(computeRoute(activeGraph, start, end, routeWeights));
         return;
       }
 
       worker.postMessage({
         type: "compute",
         requestId: currentRequestId,
-        graph,
+        graph: activeGraph,
         start,
         end,
+        weights: routeWeights,
       });
     }, 180);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [graph, start, end]);
+  }, [activeGraph, start, end, routeWeights]);
 
   const onMapPick = (point: Coordinate) => {
     if (!pickMode) return;
@@ -248,7 +269,6 @@ export default function Home() {
     const loadedGraph = validation.data;
     setRoute(null);
     setGraph(loadedGraph);
-    setPcnGeojson(graphToPcnGeoJson(loadedGraph));
 
     const nodeCount = loadedGraph.meta.nodes.toLocaleString();
     setMessage(`PCN network ready (${nodeCount} nodes). Loading Singapore roads…`);
@@ -264,18 +284,10 @@ export default function Home() {
       const roadsData: RoadsGeoJson = await roadsResponse.json();
       setRoadsGeojson(roadsData);
 
-      const builtRoadGraph = buildRoadGraph(roadsData);
-      roadGraphRef.current = builtRoadGraph;
-
-      const worker = workerRef.current;
-      if (worker) {
-        worker.postMessage({ type: "init_roads", roadsGeoJson: roadsData });
-      }
-
       const roadCount = Array.isArray(roadsData.features)
         ? roadsData.features.length.toLocaleString()
         : "0";
-      setMessage(`Ready. ${nodeCount} PCN nodes · ${roadCount} road segments loaded.`);
+      setMessage(`Ready. ${nodeCount} PCN nodes · ${roadCount} road features loaded.`);
     } catch {
       setMessage(`PCN network ready (${nodeCount} nodes). Road overlay failed to load.`);
     }
@@ -317,21 +329,38 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void loadGraph(); }, []);
 
+  const rawRoadNodeCount = useMemo(() => {
+    if (!roadsGeojson) return 0;
+    const ROAD_KINDS = new Set(["motorway", "trunk", "primary", "secondary", "tertiary"]);
+    const seen = new Set<string>();
+    for (const f of roadsGeojson.features) {
+      if (!ROAD_KINDS.has(f.properties.highway)) continue;
+      for (const c of f.geometry.coordinates) {
+        seen.add(`${Math.round(c[0] * 1e5)},${Math.round(c[1] * 1e5)}`);
+      }
+    }
+    return seen.size;
+  }, [roadsGeojson]);
+
+  // Build merged graph (PCN + roads, optionally clustered). Debounced 250 ms
+  // so slider drags don't trigger mid-drag rebuilds.
+  useEffect(() => {
+    if (!graph) { setActiveGraph(null); return; }
+    if (!roadsGeojson) { setActiveGraph(graph); return; }
+    setGraphBuilding(true);
+    const id = window.setTimeout(() => {
+      setActiveGraph(buildMergedGraph(graph, roadsGeojson, clusterEnabled ? clusterThreshold : 0));
+      setGraphBuilding(false);
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [graph, roadsGeojson, clusterEnabled, clusterThreshold]);
+
   const displayPcnGeojson = useMemo(() => {
-    if (!pcnGeojson || !showPcnOverlay) return null;
-    if (clusterEnabled && clusterThreshold > 0)
-      return clusterPcnGeoJson(pcnGeojson, clusterThreshold);
-    return pcnGeojson;
-  }, [pcnGeojson, showPcnOverlay, clusterEnabled, clusterThreshold]);
+    if (!activeGraph || !showPcnOverlay) return null;
+    return graphToAllEdgesGeoJson(activeGraph);
+  }, [activeGraph, showPcnOverlay]);
 
-  const displayRoadsGeojson = useMemo(() => {
-    if (!roadsGeojson || !showRoadsOverlay) return null;
-    if (clusterEnabled && clusterThreshold > 0)
-      return clusterRoadsGeoJson(roadsGeojson, clusterThreshold);
-    return roadsGeojson;
-  }, [roadsGeojson, showRoadsOverlay, clusterEnabled, clusterThreshold]);
-
-  const activeRoute = graph && start && end ? route : null;
+  const activeRoute = activeGraph && start && end ? route : null;
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
@@ -343,7 +372,7 @@ export default function Home() {
           start={start}
           end={end}
           onMapPick={onMapPick}
-          roadsGeojson={displayRoadsGeojson}
+          roadsGeojson={null}
           pcnGeojson={displayPcnGeojson}
           isDark={isDark}
           toggleDark={toggleDark}
@@ -498,7 +527,7 @@ export default function Home() {
             </div>
 
             {/* Legend (collapsible) */}
-            {(pcnGeojson || roadsGeojson) ? (
+            {activeGraph ? (
               <div>
                 <button
                   type="button"
@@ -509,47 +538,23 @@ export default function Home() {
                   <span className="text-[9px] opacity-60">{showLegend ? "▲" : "▼"}</span>
                 </button>
                 {showLegend && (
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1.5 rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 text-[10px] text-muted-foreground">
-                    {pcnGeojson ? (
-                      <>
-                        <span className="flex items-center gap-1.5">
-                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#00b09b]" />
-                          Park Connector
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#2ecc71]" />
-                          Park Path
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#e74c3c]" />
-                          Rail Corridor
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#4a90d9]" />
-                          Cycling Path
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#94a3b8]" />
-                          Road (off-PCN)
-                        </span>
-                      </>
-                    ) : null}
-                    {roadsGeojson ? (
-                      <>
-                        <span className="flex items-center gap-1.5">
-                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#e8003d]" />
-                          Motorway
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#e8b400]" />
-                          Primary
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#cccccc]" />
-                          Local
-                        </span>
-                      </>
-                    ) : null}
+                  <div className="mt-1 flex flex-col gap-y-1.5 rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-1.5 w-4 rounded-full bg-[#00b09b]" />
+                      Park Connector Network
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-1.5 w-4 rounded-full bg-[#a855f7]" />
+                      Future Network
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-1.5 w-4 rounded-full bg-[#4a90d9]" />
+                      Cycling Path Network
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-1.5 w-4 rounded-full bg-[#94a3b8]" />
+                      Non-PCN Road
+                    </span>
                   </div>
                 )}
               </div>
@@ -604,7 +609,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => setShowPcnOverlay((v) => !v)}
-                    disabled={!pcnGeojson}
+                    disabled={!activeGraph}
                     aria-pressed={showPcnOverlay}
                     className={cn(
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
@@ -613,22 +618,45 @@ export default function Home() {
                         : "border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >
-                    <Layers className="h-3 w-3" />PCN
+                    <Layers className="h-3 w-3" />Network
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowRoadsOverlay((v) => !v)}
-                    disabled={!roadsGeojson}
-                    aria-pressed={showRoadsOverlay}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
-                      showRoadsOverlay
-                        ? "bg-primary text-primary-foreground"
-                        : "border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <Layers className="h-3 w-3" />Roads
-                  </button>
+                </div>
+              </div>
+
+              <div className="h-px bg-border/40" />
+
+              {/* Network stats */}
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                  Network
+                </p>
+                <div className="rounded-xl border border-border/40 bg-muted/20 px-3 py-2 space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">PCN vertices</span>
+                    <span className="tabular-nums">{graph?.meta.nodes.toLocaleString() ?? "–"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Road vertices</span>
+                    <span className="tabular-nums">{rawRoadNodeCount > 0 ? rawRoadNodeCount.toLocaleString() : "–"}</span>
+                  </div>
+                  {graphBuilding ? (
+                    <div className="flex items-center gap-1.5 pt-0.5 text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span>Building…</span>
+                    </div>
+                  ) : activeGraph ? (
+                    <>
+                      <div className="h-px bg-border/30 my-0.5" />
+                      <div className="flex justify-between font-medium">
+                        <span>Active vertices</span>
+                        <span className="tabular-nums">{activeGraph.meta.nodes.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between font-medium">
+                        <span>Active edges</span>
+                        <span className="tabular-nums">{activeGraph.meta.segments.toLocaleString()}</span>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </div>
 
@@ -675,10 +703,71 @@ export default function Home() {
                       <span>200 m</span>
                     </div>
                     <p className="text-[10px] leading-relaxed text-muted-foreground/70">
-                      Vertices within {clusterThreshold} m of the same drifting centroid are merged into one. Self-loops are dropped. Applied to both overlays.
+                      Vertices within {clusterThreshold} m of the same drifting centroid are merged. PCN edges take priority over road edges. Applied to both routing and display.
                     </p>
                   </div>
                 )}
+              </div>
+
+              <div className="h-px bg-border/40" />
+
+              {/* Route Weights */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                    Route Weights
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setRouteWeights(DEFAULT_ROUTE_WEIGHTS)}
+                    className="rounded-lg px-2 py-0.5 text-[10px] font-medium border border-border/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <p className="text-[10px] leading-relaxed text-muted-foreground/60">
+                  Lower = more preferred. Affects path selection when routing.
+                </p>
+
+                {(["pcn", "future_network", "cycling_path"] as const).map((key) => {
+                  const labels: Record<string, string> = {
+                    pcn: "Park Connector Network",
+                    future_network: "Future Network",
+                    cycling_path: "Cycling Path Network",
+                  };
+                  const colors: Record<string, string> = {
+                    pcn: "#00b09b",
+                    future_network: "#a855f7",
+                    cycling_path: "#4a90d9",
+                  };
+                  return (
+                    <div key={key} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="flex items-center gap-1.5 text-muted-foreground">
+                          <span className="inline-block h-1.5 w-3 rounded-full" style={{ backgroundColor: colors[key] }} />
+                          {labels[key]}
+                        </span>
+                        <span className="font-medium tabular-nums">{routeWeights[key].toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.1}
+                        max={3.0}
+                        step={0.05}
+                        value={routeWeights[key]}
+                        onChange={(e) =>
+                          setRouteWeights((prev) => ({ ...prev, [key]: Number(e.target.value) }))
+                        }
+                        className="w-full accent-primary"
+                        style={{ accentColor: colors[key] }}
+                      />
+                      <div className="flex justify-between text-[9px] text-muted-foreground/50">
+                        <span>Prefer</span>
+                        <span>Avoid</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
             </div>

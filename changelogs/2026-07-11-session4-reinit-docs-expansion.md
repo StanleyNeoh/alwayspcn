@@ -1,3 +1,16 @@
+# Changelog — 2026-07-11 Session 5: Map Style Switcher
+
+## Added
+- `alwayspcn/src/components/map/route-map.tsx` — map style switcher (Street / Satellite / Map) as a floating segmented button group in the top-right corner of the map.
+  - Three tile providers: OpenStreetMap (street), ESRI World Imagery (satellite), CartoDB Positron (clean map).
+  - `mapStyle` state drives `TileLayer` re-mount via `key` prop.
+  - All PCN, roads, and route overlays remain on top of all base tile styles.
+
+## Validation
+- `npm run build` passed (TypeScript clean, static page generation complete).
+
+---
+
 # Changelog — 2026-07-11 Session 4: Re-Initialization + Docs Expansion
 
 ## Changed

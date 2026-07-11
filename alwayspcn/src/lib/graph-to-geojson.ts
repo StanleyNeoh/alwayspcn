@@ -50,3 +50,34 @@ export function graphToPcnGeoJson(graph: GraphData): GeoJsonCollection {
 
   return { type: "FeatureCollection", features };
 }
+
+/**
+ * Return ALL non-bridge edges from a graph as a GeoJSON FeatureCollection.
+ * Used for the merged PCN+roads overlay so both kinds share one layer.
+ */
+export function graphToAllEdgesGeoJson(graph: GraphData): GeoJsonCollection {
+  const features: GeoJsonLineFeature[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < graph.adj.length; i++) {
+    for (const [j, , kind] of graph.adj[i]) {
+      if (kind === "bridge") continue;
+      const lo = i < j ? i : j;
+      const hi = i < j ? j : i;
+      const key = `${lo}-${hi}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      features.push({
+        type: "Feature",
+        properties: { kind },
+        geometry: {
+          type: "LineString",
+          coordinates: [graph.nodes[i], graph.nodes[j]],
+        },
+      });
+    }
+  }
+
+  return { type: "FeatureCollection", features };
+}

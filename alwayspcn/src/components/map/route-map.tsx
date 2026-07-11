@@ -28,11 +28,10 @@ const ROAD_STYLE: Record<string, { color: string; weight: number; opacity: numbe
   unclassified:  { color: "#cccccc", weight: 1, opacity: 0.45 },
 };
 
-// PCN overlay — colour per route kind
+// PCN overlay — colour per route category
 const PCN_STYLE: Record<string, { color: string; weight: number; opacity: number }> = {
-  park_connector: { color: "#00b09b", weight: 3, opacity: 0.85 },
-  park_path:      { color: "#2ecc71", weight: 3, opacity: 0.85 },
-  rail_corridor:  { color: "#e74c3c", weight: 3, opacity: 0.85 },
+  pcn:            { color: "#00b09b", weight: 3, opacity: 0.85 },
+  future_network: { color: "#a855f7", weight: 3, opacity: 0.85 },
   cycling_path:   { color: "#4a90d9", weight: 2, opacity: 0.75 },
 };
 
@@ -127,10 +126,9 @@ export function RouteMap({
   }
 
   const KIND_LABEL: Record<string, string> = {
-    park_connector: "Park Connector",
-    park_path: "Park Path",
-    rail_corridor: "Rail Corridor",
-    cycling_path: "Cycling Path",
+    pcn:            "Park Connector Network",
+    future_network: "Future Network",
+    cycling_path:   "Cycling Path Network",
     motorway: "Motorway",
     trunk: "Trunk Road",
     primary: "Primary Road",
@@ -202,7 +200,7 @@ export function RouteMap({
         />
       ) : null}
 
-      {/* PCN network overlay */}
+      {/* PCN + roads network overlay */}
       {pcnGeojson ? (
         <GeoJSON
           key={`pcn-${pcnGeojson.features.length}`}
@@ -210,7 +208,7 @@ export function RouteMap({
           data={pcnGeojson as any}
           style={(feature) => {
             const kind = (feature?.properties as { kind?: string } | null)?.kind ?? "";
-            return PCN_STYLE[kind] ?? { color: "#00b09b", weight: 3, opacity: 0.8 };
+            return PCN_STYLE[kind] ?? ROAD_STYLE[kind] ?? { color: "#94a3b8", weight: 1.5, opacity: 0.5 };
           }}
         />
       ) : null}
