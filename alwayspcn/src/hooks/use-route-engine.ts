@@ -271,6 +271,11 @@ export function useRouteEngine({
   const handleServerRoutingToggle = () => {
     const next = !useServerRouting;
     setUseServerRouting(next);
+    if (next) {
+      // Invalidate any in-flight client-side worker request so its response
+      // doesn't overwrite the server route result.
+      requestIdRef.current += 1;
+    }
     if (!next && !graph) void loadGraph();
   };
 
