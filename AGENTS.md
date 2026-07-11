@@ -1,6 +1,5 @@
-# AGENTS Router
-
-This repository uses a capability-based, harness-agnostic routing model.
+# KEY INSTRUCTIONS
+Use this file to determine which skills to load for the current task. Skills are loaded in order of priority, with the first matching skill being used. If a skill is unavailable, the router will attempt to use a fallback skill or continue with local workflow.
 
 ## Core Rule
 Load only relevant files for the active task.
@@ -73,6 +72,8 @@ Use Tailwind transitions first. Use Motion only if requirements justify richer c
 ## MCP Operational Requirement
 For initialization and significant changes:
 - Attempt codemogger index and at least one usage operation.
+- Use DeepWiki MCP (`deepwiki`) for codebase/library documentation lookups.
+- Use Context7 MCP (`context7`) as secondary library docs source.
 - If unavailable, record exact failure and fallback method.
 
 ## Skill Trigger Matrix and Fallback

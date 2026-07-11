@@ -1,5 +1,16 @@
 # TODO
 
+## In Progress
+- None
+
+## Completed (2026-07-11 session 4 — Re-init + Docs Expansion)
+- Added DeepWiki MCP to `mcp.json`
+- Updated `AGENTS.md` MCP operational requirement with DeepWiki + Context7 references
+- Expanded `docs/PRD.md` to full implementation-ready quality (epics, stories, ACs, NFRs, risks, v2 backlog)
+- Expanded `docs/DESIGN_BRIEF.md` to comprehensive design system brief (palette, typography, components, layout, motion, accessibility)
+- Updated `docs/IMPLEMENTATION_PLAN.md` with completed phase statuses + upcoming phases
+- Created plan file `plans/2026-07-11-125156-reinit-deepwiki-docs-plan.md`
+
 ## Completed (2026-07-11 session 3)
 - Location autocomplete dropdown for start/end inputs (Nominatim-backed, debounced, keyboard-navigable)
 
@@ -12,10 +23,7 @@
 - Loading states for road fetch and geocoding
 - Graceful degradation when roads.json not yet built
 
-## In Progress
-- None
-
-## Completed
+## Completed (2026-07-11 session 1)
 - Created core workflow folders
 - Installed external skills including `gsd`
 - Generated `AGENTS.md`
@@ -35,7 +43,9 @@
 
 ## Backlog
 - Populate `agent.env` with FIRECRAWL_API_KEY for Firecrawl MCP operations
-- Add alternate route suggestions
+- Add alternate route suggestions (Epic B-5)
 - Add closure-aware routing from KML closure layer
 - Add mobile PWA offline support
-- Replace O(n^2) Dijkstra selection with priority queue for faster large-network routing
+- Replace O(n²) Dijkstra selection with priority queue for faster large-network routing
+- Click-on-map to set start/end markers
+- GPX/route export
