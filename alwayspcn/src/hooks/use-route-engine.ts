@@ -41,21 +41,29 @@ export function useRouteEngine({
   const [serverRouting, setServerRouting] = useState(false);
 
   /**
-   * Synchronous low-memory detection — computed once at render time so both
-   * the data-load effect and the worker-creation effect can gate on it without
-   * racing against a setState.
+   * High-power device detection — computed once at render time so the
+   * data-load and worker-creation effects can gate on it without racing
+   * against a setState.
+   * Only confirmed high-power (deviceMemory ≥ 4, non-mobile, API available)
+   * devices switch to client-side routing; everything else stays on server.
    */
-  const lowMemoryRef = useRef(
+  const highPowerRef = useRef(
     typeof navigator !== "undefined" &&
       (() => {
         const nav = navigator as Navigator & { deviceMemory?: number };
-        return typeof nav.deviceMemory === "number"
-          ? nav.deviceMemory < 4
-          : /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+        if (typeof nav.deviceMemory !== "number") return false; // unknown → safe default
+        return nav.deviceMemory >= 4 && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
       })(),
   );
 
-  const [useServerRouting, setUseServerRouting] = useState(() => lowMemoryRef.current);
+  const [useServerRouting, setUseServerRouting] = useState(true);
+
+  // navigator is unavailable on the server, so highPowerRef.current is always
+  // false during SSR. Sync the real client-side detection on mount and disable
+  // server routing only for confirmed high-power devices.
+  useEffect(() => {
+    if (highPowerRef.current) setUseServerRouting(false);
+  }, []);
 
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
@@ -108,9 +116,9 @@ export function useRouteEngine({
     }
   };
 
-  // On mount: skip data loading on low-memory devices; otherwise start graph fetch
+  // On mount: only load graph data on confirmed high-power devices
   useEffect(() => {
-    if (lowMemoryRef.current) {
+    if (!highPowerRef.current) {
       onMessage("Set two points to route (server routing).");
       return;
     }
@@ -118,9 +126,9 @@ export function useRouteEngine({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Worker lifecycle — runs once; lowMemoryRef gates entry without a state-update race
+  // Worker lifecycle — runs once; highPowerRef gates entry without a state-update race
   useEffect(() => {
-    if (lowMemoryRef.current) return;
+    if (!highPowerRef.current) return;
     try {
       const worker = new Worker(new URL("../workers/route-worker.ts", import.meta.url), {
         type: "module",
