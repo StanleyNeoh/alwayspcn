@@ -2,11 +2,9 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import { Layers, Loader2, Moon, Search, Sun } from "lucide-react";
+import { ChevronDown, ChevronUp, GripHorizontal, Layers, Loader2, MapPin, Moon, Navigation, Search, Sun } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LocationCombobox } from "@/components/ui/location-combobox";
 import { validateGraphData } from "@/lib/graph-validation";
 import { geocodeLocation } from "@/lib/geocode";
@@ -20,16 +18,60 @@ import {
   type RouteResult,
   type RoadsGeoJson,
 } from "@/lib/routing";
+import { cn } from "@/lib/utils";
 
 const RouteMap = dynamic(
   () => import("@/components/map/route-map").then((mod) => mod.RouteMap),
   { ssr: false }
 );
 
-const formatCoordinate = (point: Coordinate | null) =>
-  point ? `${point[1].toFixed(6)}, ${point[0].toFixed(6)}` : "Not set";
+const formatDistance = (meters: number) =>
+  meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`;
 
 const MAIN_THREAD_FALLBACK_NODE_LIMIT = 5000;
+
+// ── Draggable hook ──────────────────────────────────────────────────────────
+
+function useDraggable(initial: { x: number; y: number }) {
+  const [pos, setPos] = useState(initial);
+  const isDragging = useRef(false);
+  const startOffset = useRef({ x: 0, y: 0 });
+  const posRef = useRef(initial);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    isDragging.current = true;
+    startOffset.current = {
+      x: e.clientX - posRef.current.x,
+      y: e.clientY - posRef.current.y,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    if (!isDragging.current) return;
+    const newPos = {
+      x: e.clientX - startOffset.current.x,
+      y: e.clientY - startOffset.current.y,
+    };
+    posRef.current = newPos;
+    setPos(newPos);
+  };
+
+  const onPointerUp = () => {
+    isDragging.current = false;
+  };
+
+  return {
+    pos,
+    dragHandleProps: {
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+    } as React.HTMLAttributes<HTMLElement>,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 
 /** Matches "1.3521, 103.8198" or "1.3521,103.8198" (lat,lng) */
 const COORD_RE = /^[-+]?\d+\.?\d*\s*,\s*[-+]?\d+\.?\d*$/;
@@ -53,14 +95,18 @@ export default function Home() {
   const [pcnGeojson, setPcnGeojson] = useState<GeoJsonCollection | null>(null);
   const [showPcnOverlay, setShowPcnOverlay] = useState(false);
   const [showRoadsOverlay, setShowRoadsOverlay] = useState(false);
-  const [isLoadingRoads, setIsLoadingRoads] = useState(false);
   const roadGraphRef = useRef<ReturnType<typeof buildRoadGraph> | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
-
+  const [showLegend, setShowLegend] = useState(false);
   const [isDark, setIsDark] = useState(false);
+  const [brandOpen, setBrandOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(true);
 
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
+
+  const brand = useDraggable({ x: 16, y: 16 });
+  const panel = useDraggable({ x: 16, y: 72 });
 
   useEffect(() => {
     const stored = localStorage.getItem("theme");
@@ -200,15 +246,11 @@ export default function Home() {
     const loadedGraph = validation.data;
     setRoute(null);
     setGraph(loadedGraph);
-
-    // Build PCN overlay from the graph immediately (no extra fetch)
     setPcnGeojson(graphToPcnGeoJson(loadedGraph));
 
     const nodeCount = loadedGraph.meta.nodes.toLocaleString();
     setMessage(`PCN network ready (${nodeCount} nodes). Loading Singapore roads…`);
 
-    // Fetch pre-built Singapore road GeoJSON in the background
-    setIsLoadingRoads(true);
     try {
       const roadsResponse = await fetch("/api/data/roads");
       if (!roadsResponse.ok) {
@@ -220,7 +262,6 @@ export default function Home() {
       const roadsData: RoadsGeoJson = await roadsResponse.json();
       setRoadsGeojson(roadsData);
 
-      // Build road graph for main-thread fallback and send to worker for fallback routing.
       const builtRoadGraph = buildRoadGraph(roadsData);
       roadGraphRef.current = builtRoadGraph;
 
@@ -235,8 +276,6 @@ export default function Home() {
       setMessage(`Ready. ${nodeCount} PCN nodes · ${roadCount} road segments loaded.`);
     } catch {
       setMessage(`PCN network ready (${nodeCount} nodes). Road overlay failed to load.`);
-    } finally {
-      setIsLoadingRoads(false);
     }
   };
 
@@ -279,215 +318,293 @@ export default function Home() {
   const activeRoute = graph && start && end ? route : null;
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-4 p-4 sm:p-6">
-      <header className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-md backdrop-blur-sm sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="font-heading text-3xl tracking-tight text-primary sm:text-4xl">AlwaysPCN</h1>
-            <p className="text-sm text-muted-foreground sm:text-base">
-              Park connector first routing across Singapore&apos;s PCN and cycling network.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className="bg-accent text-accent-foreground">PCN Priority Routing</Badge>
+    <div className="relative h-screen w-screen overflow-hidden">
 
-            <button
-              type="button"
-              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-              onClick={toggleDark}
-              className="ml-1 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-background/60 text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-          </div>
+      {/* ── Full-screen map ───────────────────────────────────────── */}
+      <div className="absolute inset-0">
+        <RouteMap
+          segments={activeRoute?.found ? activeRoute.segments : []}
+          start={start}
+          end={end}
+          onMapPick={onMapPick}
+          roadsGeojson={showRoadsOverlay ? roadsGeojson : null}
+          pcnGeojson={showPcnOverlay ? pcnGeojson : null}
+        />
+      </div>
+
+      {/* ── Brand card ────────────────────────────────────────────── */}
+      <div
+        style={{ transform: `translate(${brand.pos.x}px, ${brand.pos.y}px)` }}
+        className="absolute left-0 top-0 z-[1000] select-none"
+      >
+        <div
+          {...brand.dragHandleProps}
+          className="flex cursor-grab items-center gap-2.5 rounded-2xl border border-zinc-200/70 bg-white/95 px-4 py-2.5 shadow-lg backdrop-blur-xl transition-shadow hover:shadow-xl active:cursor-grabbing dark:border-zinc-700/70 dark:bg-zinc-950/95"
+        >
+          <h1 className="font-heading text-sm font-semibold tracking-tight text-foreground">
+            AlwaysPCN
+          </h1>
+          {brandOpen && (
+            <>
+              <Badge className="bg-accent px-1.5 py-0 text-[10px] text-accent-foreground">PCN</Badge>
+              <div className="h-3.5 w-px bg-border/60" />
+              <button
+                type="button"
+                aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={toggleDark}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            aria-label={brandOpen ? "Collapse" : "Expand"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setBrandOpen((v) => !v)}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {brandOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
         </div>
-      </header>
+      </div>
 
-      <section className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[370px_minmax(0,1fr)]">
-        <Card className="border-border/80 bg-card/90 shadow-md backdrop-blur-sm">
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="font-heading text-xl">Route Controls</CardTitle>
-              <div className="flex items-center gap-1.5">
-                {pcnGeojson ? (
-                  <Button
-                    variant={showPcnOverlay ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setShowPcnOverlay((v) => !v)}
-                    aria-pressed={showPcnOverlay}
-                    title={showPcnOverlay ? "Hide PCN overlay" : "Show PCN overlay"}
-                    className="h-8 gap-1.5 px-2 text-xs"
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    PCN
-                  </Button>
-                ) : null}
-                {roadsGeojson ? (
-                  <Button
-                    variant={showRoadsOverlay ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setShowRoadsOverlay((v) => !v)}
-                    aria-pressed={showRoadsOverlay}
-                    title={showRoadsOverlay ? "Hide roads overlay" : "Show roads overlay"}
-                    className="h-8 gap-1.5 px-2 text-xs"
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    Roads
-                  </Button>
-                ) : null}
+      {/* ── Route panel ──────────────────────────────────────────── */}
+      {/* No overflow:hidden so the combobox dropdown can escape the card */}
+      <div
+        style={{ transform: `translate(${panel.pos.x}px, ${panel.pos.y}px)` }}
+        className="absolute left-0 top-0 z-[1000] w-[310px] select-none"
+      >
+        <div className="rounded-2xl border border-zinc-200/70 bg-white/95 shadow-xl backdrop-blur-xl dark:border-zinc-700/70 dark:bg-zinc-950/95">
+
+          {/* Drag handle */}
+          <div
+            {...panel.dragHandleProps}
+            className={cn(
+              "flex cursor-grab items-center justify-between gap-2 border-b border-border/40 bg-muted/20 px-4 py-2 active:cursor-grabbing",
+              panelOpen ? "rounded-t-2xl" : "rounded-2xl border-b-0"
+            )}
+          >
+            <div className="flex items-center gap-1.5">
+              <GripHorizontal className="h-3.5 w-3.5 text-muted-foreground/50" />
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                Route planner
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {pcnGeojson && panelOpen ? (
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => setShowPcnOverlay((v) => !v)}
+                  aria-pressed={showPcnOverlay}
+                  title={showPcnOverlay ? "Hide PCN overlay" : "Show PCN overlay"}
+                  className={cn(
+                    "flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-medium transition-colors",
+                    showPcnOverlay
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <Layers className="h-2.5 w-2.5" />PCN
+                </button>
+              ) : null}
+              {roadsGeojson && panelOpen ? (
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => setShowRoadsOverlay((v) => !v)}
+                  aria-pressed={showRoadsOverlay}
+                  title={showRoadsOverlay ? "Hide roads overlay" : "Show roads overlay"}
+                  className={cn(
+                    "flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-medium transition-colors",
+                    showRoadsOverlay
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <Layers className="h-2.5 w-2.5" />Roads
+                </button>
+              ) : null}
+              <button
+                type="button"
+                aria-label={panelOpen ? "Collapse panel" : "Expand panel"}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => setPanelOpen((v) => !v)}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {panelOpen
+                  ? <ChevronUp className="h-3.5 w-3.5" />
+                  : <ChevronDown className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Card content */}
+          {panelOpen && <div className="space-y-3 p-4">
+
+            {/* Location inputs */}
+            <div className="space-y-2">
+              <LocationCombobox
+                id="start"
+                label="Start"
+                placeholder="Place name or lat,lng"
+                value={startInput}
+                onChange={setStartInput}
+                onSelect={(coord, label) => {
+                  setRoute(null);
+                  setStart(coord);
+                  setStartInput(label);
+                  setMessage("Start location set. Routing…");
+                }}
+              />
+              <LocationCombobox
+                id="end"
+                label="End"
+                placeholder="Place name or lat,lng"
+                value={endInput}
+                onChange={setEndInput}
+                onSelect={(coord, label) => {
+                  setRoute(null);
+                  setEnd(coord);
+                  setEndInput(label);
+                  setMessage("End location set. Routing…");
+                }}
+              />
+            </div>
+
+            {/* Action row: search + map pick mode */}
+            <div className="flex items-center gap-2">
+              <button
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                type="button"
+                onClick={applyLocations}
+                disabled={isGeocoding}
+              >
+                {isGeocoding
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Search className="h-3.5 w-3.5" />}
+                {isGeocoding ? "Resolving…" : "Search"}
+              </button>
+
+              {/* Map pick mode */}
+              <div
+                className="flex shrink-0 overflow-hidden rounded-xl border border-border/70 text-xs"
+                role="group"
+                aria-label="Map click mode"
+              >
+                <button
+                  type="button"
+                  title="Click map to set start"
+                  onClick={() => setPickMode("start")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-2 transition-colors",
+                    pickMode === "start"
+                      ? "bg-teal-500 text-white"
+                      : "text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  <MapPin className="h-3 w-3" />S
+                </button>
+                <div className="w-px bg-border/60" />
+                <button
+                  type="button"
+                  title="Click map to set end"
+                  onClick={() => setPickMode("end")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-2 transition-colors",
+                    pickMode === "end"
+                      ? "bg-rose-500 text-white"
+                      : "text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  <Navigation className="h-3 w-3" />E
+                </button>
               </div>
             </div>
-            <CardDescription>
-              Enter a place name, street address, or lat,lng coordinates.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <LocationCombobox
-              id="start"
-              label="Start — place name or lat,lng"
-              placeholder="e.g. Bishan Park or 1.3521,103.8198"
-              value={startInput}
-              onChange={setStartInput}
-              onSelect={(coord, label) => {
-                setRoute(null);
-                setStart(coord);
-                setStartInput(label);
-                setMessage("Start location set. Routing…");
-              }}
-            />
 
-            <LocationCombobox
-              id="end"
-              label="End — place name or lat,lng"
-              placeholder="e.g. Gardens by the Bay"
-              value={endInput}
-              onChange={setEndInput}
-              onSelect={(coord, label) => {
-                setRoute(null);
-                setEnd(coord);
-                setEndInput(label);
-                setMessage("End location set. Routing…");
-              }}
-            />
-
-            <button
-              className="inline-flex h-10 w-full items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:opacity-60"
-              type="button"
-              onClick={applyLocations}
-              disabled={isGeocoding}
-            >
-              {isGeocoding ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="mr-2 h-4 w-4" />
-              )}
-              {isGeocoding ? "Resolving…" : "Apply / Locate"}
-            </button>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className={`rounded-md border px-3 py-2 text-sm ${
-                  pickMode === "start" ? "border-primary bg-primary/10" : "border-border"
-                }`}
-                type="button"
-                onClick={() => setPickMode("start")}
-              >
-                Click Sets Start
-              </button>
-              <button
-                className={`rounded-md border px-3 py-2 text-sm ${
-                  pickMode === "end" ? "border-primary bg-primary/10" : "border-border"
-                }`}
-                type="button"
-                onClick={() => setPickMode("end")}
-              >
-                Click Sets End
-              </button>
+            {/* Status + route stats */}
+            <div className="rounded-xl border border-border/40 bg-muted/25 px-3 py-2.5 text-xs">
+              <p className="leading-relaxed text-muted-foreground">{message}</p>
+              {activeRoute?.found ? (
+                <div className="mt-2 space-y-0.5 font-medium text-foreground">
+                  <p>Distance: {formatDistance(activeRoute.distanceMeters)}</p>
+                  <p>PCN share: {(activeRoute.connectorShare * 100).toFixed(1)}%</p>
+                  {activeRoute.usesFallback && (
+                    <p className="font-normal text-muted-foreground">Mixed network fallback</p>
+                  )}
+                </div>
+              ) : activeRoute?.found === false ? (
+                <p className="mt-1 font-medium text-destructive">
+                  No route found for selected points.
+                </p>
+              ) : null}
             </div>
 
-            <div className="rounded-md border border-border/70 bg-secondary/30 p-3 text-sm">
-              <p>
-                <strong>Start:</strong> {formatCoordinate(start)}
-              </p>
-              <p>
-                <strong>End:</strong> {formatCoordinate(end)}
-              </p>
-            </div>
-
-            {/* Map legend */}
+            {/* Legend (collapsible) */}
             {(pcnGeojson || roadsGeojson) ? (
-              <div className="space-y-1 rounded-md border border-border/70 bg-secondary/20 p-3 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">Map Legend</p>
-                {roadsGeojson ? (
-                  <>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-5 rounded bg-[#e8003d]" />Motorway
-                    </span>
-                    {" · "}
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-5 rounded bg-[#e8b400]" />Primary
-                    </span>
-                    {" · "}
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-5 rounded bg-[#cccccc]" />Local roads
-                    </span>
-                  </>
-                ) : null}
-                {pcnGeojson ? (
-                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-5 rounded bg-[#00b09b]" />Park Connector
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-5 rounded bg-[#2ecc71]" />Park Path
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-5 rounded bg-[#e74c3c]" />Rail Corridor
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-5 rounded bg-[#4a90d9]" />Cycling Path
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-5 rounded bg-[#94a3b8]" />Road (off-PCN)
-                    </span>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowLegend((v) => !v)}
+                  className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <span>Legend</span>
+                  <span className="text-[9px] opacity-60">{showLegend ? "▲" : "▼"}</span>
+                </button>
+                {showLegend && (
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1.5 rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 text-[10px] text-muted-foreground">
+                    {pcnGeojson ? (
+                      <>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#00b09b]" />
+                          Park Connector
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#2ecc71]" />
+                          Park Path
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#e74c3c]" />
+                          Rail Corridor
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#4a90d9]" />
+                          Cycling Path
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#94a3b8]" />
+                          Road (off-PCN)
+                        </span>
+                      </>
+                    ) : null}
+                    {roadsGeojson ? (
+                      <>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#e8003d]" />
+                          Motorway
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#e8b400]" />
+                          Primary
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block h-1.5 w-4 rounded-full bg-[#cccccc]" />
+                          Local
+                        </span>
+                      </>
+                    ) : null}
                   </div>
-                ) : null}
+                )}
               </div>
             ) : null}
 
-            <div className="rounded-md border border-border/70 bg-muted/50 p-3 text-sm">
-              <p className="font-medium">Status</p>
-              <p className="text-muted-foreground">{message}</p>
-              {activeRoute ? (
-                activeRoute.found ? (
-                  <div className="mt-2 space-y-1 text-muted-foreground">
-                    <p>Distance: {(activeRoute.distanceMeters / 1000).toFixed(2)} km</p>
-                    <p>Connector share: {(activeRoute.connectorShare * 100).toFixed(1)}%</p>
-                    <p>
-                      Mode:{" "}
-                      {activeRoute.usesFallback ? "Mixed network fallback" : "Connector dominant"}
-                    </p>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-destructive">No route found for selected points.</p>
-                )
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="min-h-[62vh] overflow-hidden rounded-2xl border border-border/80 bg-card/80 shadow-md">
-          <RouteMap
-            segments={activeRoute?.found ? activeRoute.segments : []}
-            start={start}
-            end={end}
-            onMapPick={onMapPick}
-            roadsGeojson={showRoadsOverlay ? roadsGeojson : null}
-            pcnGeojson={showPcnOverlay ? pcnGeojson : null}
-          />
+          </div>}
         </div>
-      </section>
-    </main>
+      </div>
+
+    </div>
   );
 }
-
