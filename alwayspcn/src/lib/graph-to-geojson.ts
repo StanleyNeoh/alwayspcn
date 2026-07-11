@@ -13,9 +13,8 @@ export type GeoJsonCollection = {
 
 // Kinds that belong to the park connector / active mobility network
 const PCN_KINDS = new Set([
-  "park_connector",
-  "park_path",
-  "rail_corridor",
+  "pcn",
+  "future_network",
   "cycling_path",
 ]);
 

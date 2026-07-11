@@ -27,7 +27,7 @@ const RouteMap = dynamic(
 const formatDistance = (meters: number) =>
   meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`;
 
-const MAIN_THREAD_FALLBACK_NODE_LIMIT = 5000;
+const MAIN_THREAD_FALLBACK_NODE_LIMIT = 50_000;
 
 // ── Draggable hook ──────────────────────────────────────────────────────────
 
@@ -175,11 +175,20 @@ export default function Home() {
     }
   }, []);
 
+  // Cache the active graph in the worker once on change so compute messages
+  // don't need to clone the full graph (~2 MB) on every route request.
+  useEffect(() => {
+    const worker = workerRef.current;
+    if (!worker || !activeGraph) return;
+    worker.postMessage({ type: "init_graph", graph: activeGraph });
+  }, [activeGraph]);
+
   useEffect(() => {
     if (!activeGraph || !start || !end) {
       return;
     }
 
+    setRoute(null);
     const timeoutId = window.setTimeout(() => {
       requestIdRef.current += 1;
       const currentRequestId = requestIdRef.current;
@@ -200,7 +209,6 @@ export default function Home() {
       worker.postMessage({
         type: "compute",
         requestId: currentRequestId,
-        graph: activeGraph,
         start,
         end,
         weights: routeWeights,
@@ -372,7 +380,6 @@ export default function Home() {
           start={start}
           end={end}
           onMapPick={onMapPick}
-          roadsGeojson={null}
           pcnGeojson={displayPcnGeojson}
           isDark={isDark}
           toggleDark={toggleDark}
@@ -516,7 +523,7 @@ export default function Home() {
                   <p>Distance: {formatDistance(activeRoute.distanceMeters)}</p>
                   <p>PCN share: {(activeRoute.connectorShare * 100).toFixed(1)}%</p>
                   {activeRoute.usesFallback && (
-                    <p className="font-normal text-muted-foreground">Mixed network fallback</p>
+                    <p className="font-normal text-muted-foreground">Road segments used</p>
                   )}
                 </div>
               ) : activeRoute?.found === false ? (

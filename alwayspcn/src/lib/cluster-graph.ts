@@ -1,4 +1,3 @@
-import type { GeoJsonCollection, GeoJsonLineFeature } from "./graph-to-geojson";
 import type { GraphData, RoadsGeoJson } from "./routing";
 
 type Coord = [number, number];
@@ -151,126 +150,13 @@ function buildClusterMap(coords: Coord[], thresholdMeters: number): Coord[] {
 
 // ─── Coord registry ───────────────────────────────────────────────────────────
 
-/**
- * Maps arbitrary coordinate tuples to stable integer indices so that
- * buildClusterMap can work on a deduplicated flat array.
- */
-function makeRegistry(): { coordList: Coord[]; getIdx: (c: Coord) => number } {
-  const coordList: Coord[] = [];
-  const coordIndex = new Map<string, number>();
-  return {
-    coordList,
-    getIdx(c: Coord): number {
-      const key = `${c[0]},${c[1]}`;
-      let idx = coordIndex.get(key);
-      if (idx === undefined) {
-        idx = coordList.length;
-        coordIndex.set(key, idx);
-        coordList.push(c);
-      }
-      return idx;
-    },
-  };
-}
-
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-/**
- * Cluster the vertices in a PCN GeoJSON collection.
- * Returns a new collection where nearby vertices are snapped to their cluster
- * centroid. LineString features that collapse to a single point are dropped.
- * Duplicate 2-point edges produced by the snap are deduplicated.
- */
-export function clusterPcnGeoJson(
-  geojson: GeoJsonCollection,
-  thresholdMeters: number,
-): GeoJsonCollection {
-  if (thresholdMeters <= 0) return geojson;
-
-  const { coordList, getIdx } = makeRegistry();
-  for (const f of geojson.features) {
-    for (const c of f.geometry.coordinates) getIdx(c as Coord);
-  }
-
-  const mapped = buildClusterMap(coordList, thresholdMeters);
-  const features: GeoJsonLineFeature[] = [];
-  const seenEdges = new Set<string>();
-
-  for (const feature of geojson.features) {
-    const newCoords: Coord[] = [];
-    for (const c of feature.geometry.coordinates as Coord[]) {
-      const mc = mapped[getIdx(c)];
-      const prev = newCoords[newCoords.length - 1];
-      if (!prev || prev[0] !== mc[0] || prev[1] !== mc[1]) {
-        newCoords.push(mc);
-      }
-    }
-    if (newCoords.length < 2) continue;
-
-    // Deduplicate undirected 2-point edges per kind.
-    if (newCoords.length === 2) {
-      const [a, b] = newCoords;
-      const k = `${Math.min(a[0], b[0])},${Math.min(a[1], b[1])}-${Math.max(a[0], b[0])},${Math.max(a[1], b[1])}-${feature.properties.kind}`;
-      if (seenEdges.has(k)) continue;
-      seenEdges.add(k);
-    }
-
-    features.push({
-      type: "Feature",
-      properties: { kind: feature.properties.kind },
-      geometry: { type: "LineString", coordinates: newCoords },
-    });
-  }
-
-  return { type: "FeatureCollection", features };
-}
-
-/**
- * Cluster the vertices in a roads GeoJSON feature collection.
- * Behaves identically to clusterPcnGeoJson but preserves road feature
- * properties (highway type, name).
- */
-export function clusterRoadsGeoJson(
-  geojson: RoadsGeoJson,
-  thresholdMeters: number,
-): RoadsGeoJson {
-  if (thresholdMeters <= 0) return geojson;
-
-  const { coordList, getIdx } = makeRegistry();
-  for (const f of geojson.features) {
-    for (const c of f.geometry.coordinates) getIdx(c as Coord);
-  }
-
-  const mapped = buildClusterMap(coordList, thresholdMeters);
-
-  const features = geojson.features
-    .map((feature) => {
-      const newCoords: Coord[] = [];
-      for (const c of feature.geometry.coordinates as Coord[]) {
-        const mc = mapped[getIdx(c)];
-        const prev = newCoords[newCoords.length - 1];
-        if (!prev || prev[0] !== mc[0] || prev[1] !== mc[1]) {
-          newCoords.push(mc);
-        }
-      }
-      if (newCoords.length < 2) return null;
-      return {
-        ...feature,
-        geometry: { type: "LineString" as const, coordinates: newCoords },
-      };
-    })
-    .filter((f): f is NonNullable<typeof f> => f !== null);
-
-  return { type: "FeatureCollection", features };
-}
-
 // ─── Constants for merge ──────────────────────────────────────────────────────
 
 const MERGE_ROAD_KINDS = new Set([
   "motorway", "trunk", "primary", "secondary", "tertiary",
 ]);
 const MERGE_PCN_KINDS = new Set([
-  "park_connector", "park_path", "rail_corridor", "cycling_path",
+  "pcn", "future_network", "cycling_path",
 ]);
 const MAX_BRIDGE_METERS = 400;
 

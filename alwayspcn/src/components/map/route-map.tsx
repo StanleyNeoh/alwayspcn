@@ -10,14 +10,7 @@ import type { RouteSegment } from "@/lib/routing";
 
 type Coordinate = [number, number];
 
-// A permissive GeoJSON collection type suitable for both PCN and roads overlays
-type AnyGeoJsonCollection = {
-  type: "FeatureCollection";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  features: Array<{ type: "Feature"; properties: Record<string, any>; geometry: unknown }>;
-};
-
-// Roads overlay — one colour per OSM highway classification
+// Roads overlay colours (also used as fallback for road-kind edges in the merged PCN layer)
 const ROAD_STYLE: Record<string, { color: string; weight: number; opacity: number }> = {
   motorway:      { color: "#e8003d", weight: 3, opacity: 0.7 },
   trunk:         { color: "#e67e22", weight: 2, opacity: 0.7 },
@@ -72,7 +65,6 @@ type RouteMapProps = {
   start: Coordinate | null;
   end: Coordinate | null;
   onMapPick: (point: Coordinate) => void;
-  roadsGeojson?: AnyGeoJsonCollection | null;
   pcnGeojson?: GeoJsonCollection | null;
   isDark?: boolean;
   toggleDark?: () => void;
@@ -92,7 +84,6 @@ export function RouteMap({
   start,
   end,
   onMapPick,
-  roadsGeojson,
   pcnGeojson,
   isDark,
   toggleDark,
@@ -186,19 +177,6 @@ export function RouteMap({
           url={tileConfig.url}
         />
       <ClickCapture onMapPick={onMapPick} />
-
-      {/* Singapore roads overlay — rendered below PCN */}
-      {roadsGeojson ? (
-        <GeoJSON
-          key={`roads-${roadsGeojson.features.length}`}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data={roadsGeojson as any}
-          style={(feature) => {
-            const hw = (feature?.properties as { highway?: string } | null)?.highway ?? "";
-            return ROAD_STYLE[hw] ?? { color: "#cccccc", weight: 1, opacity: 0.4 };
-          }}
-        />
-      ) : null}
 
       {/* PCN + roads network overlay */}
       {pcnGeojson ? (
