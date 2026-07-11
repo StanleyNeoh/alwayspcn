@@ -2,7 +2,7 @@
 
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Moon, Sun } from "lucide-react";
 import { CircleMarker, GeoJSON, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
@@ -42,13 +42,13 @@ function NavigationController({ position }: { position: [number, number] }) {
  */
 function NavigationDragFix({ heading }: { heading: number }) {
   const map = useMap();
+  // Keep heading in a ref so the drag handlers always read the latest value
+  // without needing to re-mount on every heading change.
+  const headingRef = useRef(heading);
+  useEffect(() => { headingRef.current = heading; }, [heading]);
 
   useEffect(() => {
     map.dragging.disable();
-
-    const θ = (heading * Math.PI) / 180;
-    const cosθ = Math.cos(θ);
-    const sinθ = Math.sin(θ);
 
     let active = false;
     let lastX = 0;
@@ -70,8 +70,9 @@ function NavigationDragFix({ heading }: { heading: number }) {
       lastX = e.clientX;
       lastY = e.clientY;
       // Counter-rotate the delta to compensate for the CSS map rotation.
-      const rdx = dx * cosθ + dy * sinθ;
-      const rdy = -dx * sinθ + dy * cosθ;
+      const θ = (headingRef.current * Math.PI) / 180;
+      const rdx = dx * Math.cos(θ) + dy * Math.sin(θ);
+      const rdy = -dx * Math.sin(θ) + dy * Math.cos(θ);
       map.panBy([-rdx, -rdy], { animate: false });
     };
 
@@ -91,7 +92,8 @@ function NavigationDragFix({ heading }: { heading: number }) {
       container.removeEventListener("pointercancel", onPointerUp);
       map.dragging.enable();
     };
-  }, [map, heading]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
 
   return null;
 }
@@ -202,6 +204,35 @@ export function RouteMap({
 }: RouteMapProps) {
   const [mapStyle, setMapStyle] = useState<MapStyleKey>("map");
   const tileConfig = MAP_STYLES[mapStyle];
+
+  // Track an "unwrapped" continuous heading to avoid CSS 360° spin artifacts.
+  // Instead of jumping from 359° to 1° (which causes a full clockwise rotation),
+  // we accumulate the shortest-arc delta each time navHeading changes.
+  const prevRawHeadingRef = useRef<number | null>(null);
+  const unwrappedHeadingRef = useRef<number>(0);
+  const [displayHeading, setDisplayHeading] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (navHeading === null) {
+      prevRawHeadingRef.current = null;
+      setDisplayHeading(null);
+      return;
+    }
+    if (prevRawHeadingRef.current === null) {
+      // First heading reading – initialise without animation.
+      unwrappedHeadingRef.current = navHeading;
+      prevRawHeadingRef.current = navHeading;
+      setDisplayHeading(navHeading);
+      return;
+    }
+    // Shortest-arc delta in (-180, 180].
+    let delta = navHeading - prevRawHeadingRef.current;
+    if (delta > 180) delta -= 360;
+    if (delta <= -180) delta += 360;
+    unwrappedHeadingRef.current += delta;
+    prevRawHeadingRef.current = navHeading;
+    setDisplayHeading(unwrappedHeadingRef.current);
+  }, [navHeading]);
   // Group consecutive same-kind AND same-name segments into polylines
   type SegGroup = { kind: string; name: string; distanceMeters: number; positions: [number, number][] };
   const segGroups: SegGroup[] = [];
@@ -290,7 +321,7 @@ export function RouteMap({
             height="28"
             viewBox="-14 -14 28 28"
             style={{
-              transform: navHeading !== null ? `rotate(${-navHeading}deg)` : undefined,
+              transform: displayHeading !== null ? `rotate(${-displayHeading}deg)` : undefined,
               transition: "transform 0.4s ease-out",
             }}
           >
@@ -312,8 +343,8 @@ export function RouteMap({
           position: "absolute",
           inset: 0,
           transform:
-            navMode && navHeading !== null
-              ? `rotate(${-navHeading}deg) scale(1.45)`
+            navMode && displayHeading !== null
+              ? `rotate(${-displayHeading}deg) scale(1.45)`
               : undefined,
           transformOrigin: "50% 50%",
           transition: "transform 0.5s ease-out",
