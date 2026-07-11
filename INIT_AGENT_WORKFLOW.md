@@ -79,6 +79,7 @@ Use this contract for initialization and all follow-up work generated from this 
   - security review attempt
   - changelog update
   - TODO update
+  - auto-commit
 4. MCP setup alone is insufficient; operational MCP usage must be attempted and logged.
 5. Skill installation alone is insufficient; skill usage must be triggered by task type and logged.
 6. Any skipped gate must include a reason in output and in changelog.
@@ -95,7 +96,8 @@ After any non-trivial file change, run this sequence in order:
 5. Attempt security review when the external skill/tool is available
 6. Update changelog entry
 7. Update `TODO.md` status
-8. Report completion with pass/fail/unavailable status per gate
+8. Auto-commit changes for the completed cycle
+9. Report completion with pass/fail/unavailable status per gate
 
 ### 0.2) Required Evidence Output
 
@@ -139,8 +141,9 @@ When instructed to initialize, run this workflow in order:
 21. Index the repository with codemogger when available
 22. Run post-change gate checklist in Section 0.1
 23. Update project context and commands
-24. Emit evidence output per Section 0.2
-25. Use subagents + git worktrees for parallelizable slices when beneficial
+24. Auto-commit full-cycle changes
+25. Emit evidence output per Section 0.2
+26. Use subagents + git worktrees for parallelizable slices when beneficial
 
 ---
 
@@ -306,8 +309,9 @@ The prior malformed inline template blocks should be rendered as valid markdown 
 7. Update changelog
 8. Update TODO
 9. Report evidence
+10. Auto-commit all cycle changes
 
-`AGENTS.md` must state that completion is not allowed if steps 4-9 are missing unless explicitly unavailable and reported.
+`AGENTS.md` must state that completion is not allowed if steps 4-10 are missing unless explicitly unavailable and reported.
 
 ## 4.1) Generate Harness Mirrors (When Applicable)
 
