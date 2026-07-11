@@ -12,7 +12,12 @@ Requirements:
 - Generate a full, implementation-ready PRD.
 - Generate a design brief.
 - Save all plans to `plans/`.
-- Set up DeepWiki MCP.
+- Set up Context7 MCP.
+- Include Firecrawl MCP.
+- Include Chrome DevTools MCP.
+- Include Vercel Next DevTools MCP.
+- Include codemogger MCP for code indexing.
+- Request MCP auth values from the user via `agent.env`.
 - Generate docs, `TODO.md`, and `README.md`.
 - Scaffold the app if needed.
 - Use Tailwind CSS with shadcn/ui as the default UI system.
@@ -42,7 +47,7 @@ It generates:
 1. `AGENTS.md`
 2. Core local modular skill files
 3. Installed external skills
-4. DeepWiki MCP config
+4. MCP config (Context7 + Firecrawl + Chrome DevTools + Vercel Next DevTools + codemogger)
 5. Full product and technical documentation
 6. Markdown implementation plans in `plans/`
 7. `TODO.md`
@@ -65,7 +70,8 @@ When instructed to initialize, run this workflow in order:
 4. Generate `AGENTS.md`
 5. Generate harness mirrors when relevant
 6. Generate core local skills
-7. Generate DeepWiki MCP config
+7. Generate MCP config (Context7 + Firecrawl + Chrome DevTools + Vercel Next DevTools + codemogger)
+8. During initialization only, generate or update `agent.env` for required MCP auth values
 8. Generate full PRD and planning docs
 9. Generate `docs/DESIGN_BRIEF.md`
 10. Generate plan files in `plans/`
@@ -77,8 +83,9 @@ When instructed to initialize, run this workflow in order:
 16. Run available validation
 17. Run security review if external skill is available
 18. Create changelog
-19. Update project context and commands
-20. Use subagents + git worktrees for parallelizable slices when beneficial
+19. Index the repository with codemogger when available
+20. Update project context and commands
+21. Use subagents + git worktrees for parallelizable slices when beneficial
 
 ---
 
@@ -297,9 +304,31 @@ Should define required docs creation/update behavior and required new-project do
 
 ---
 
-## 6) Generate DeepWiki MCP Config
+## 6) Generate MCP Config
 
 Use discovery-first MCP config updates.
+
+Before finalizing MCP config during initialization, generate `agent.env` at repo root with placeholders for required auth values and ask the user to populate it.
+
+Create or update `agent.env` only when running the initialization workflow. For non-initialization tasks, do not auto-create `agent.env`; use existing values if present and rely on `agent.env.example` as the template.
+
+Minimum `agent.env` keys:
+
+```env
+# Required for Firecrawl MCP
+FIRECRAWL_API_KEY=
+
+# Add if your Vercel MCP usage requires auth
+VERCEL_TOKEN=
+
+# Add if your codemogger setup uses remote/cloud auth
+CODEMOGGER_API_KEY=
+
+# Add if your Context7 setup requires auth
+CONTEXT7_API_KEY=
+```
+
+Also create `agent.env.example` with the same keys and ensure `agent.env` is ignored in VCS.
 
 Known MCP config candidates:
 
@@ -311,25 +340,75 @@ Known MCP config candidates:
 Rules:
 
 1. Detect existing MCP config files in known candidates.
-2. Merge `deepwiki` into each existing config file's `mcpServers`.
+2. Merge required MCP servers into each existing config file's `mcpServers`.
 3. If none exist, create `mcp.json` at repository root as the harness-neutral default.
 4. If user requests a harness-specific location, also write there.
 
-Required deepwiki entry:
+Required MCP entries:
 
 ```json
 {
   "mcpServers": {
-    "deepwiki": {
-      "serverUrl": "https://mcp.deepwiki.com/mcp"
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "firecrawl-mcp"
+      ],
+      "env": {
+        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      }
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "chrome-devtools-mcp@latest"
+      ]
+    },
+    "vercel-next-dev-tools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "vercel-next-dev-tools-mcp@latest"
+      ],
+      "env": {
+        "VERCEL_TOKEN": "${VERCEL_TOKEN}"
+      }
+    },
+    "codemogger": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "codemogger",
+        "mcp"
+      ],
+      "env": {
+        "CODEMOGGER_API_KEY": "${CODEMOGGER_API_KEY}"
+      }
     }
   }
 }
 ```
 
-If another MCP config exists, preserve existing servers and merge `deepwiki` into `mcpServers`.
+If another MCP config exists, preserve existing servers and merge all required MCP entries into `mcpServers`.
+
+When MCP servers support environment injection, map auth fields to `${...}` variables resolved from `agent.env`.
+
+If a harness cannot auto-load `agent.env`, document a fallback command wrapper in `README.md` (for example using `set -a; source agent.env; set +a`).
 
 Do not delete existing MCP servers.
+
+After MCP config is in place, perform initial repository indexing through codemogger when available:
+
+```bash
+npx -y codemogger index .
+```
+
+If the repository uses local ignore rules, ensure codemogger local DB artifacts are ignored (for example `.codemogger/`).
 
 ---
 
@@ -683,7 +762,13 @@ Initialization is complete when:
 - No empty local skill folders exist
 - External skills were installed or failures reported
 - `gsd` installed or failure reported
-- DeepWiki MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
+- Context7 MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
+- Firecrawl MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
+- Chrome DevTools MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
+- Vercel Next DevTools MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
+- codemogger MCP config exists in at least one discovered or default-neutral MCP config and is merged into any other existing harness MCP configs
+- `agent.env` exists with placeholders for MCP auth and `agent.env.example` exists for sharing defaults
+- Initial codemogger repository indexing attempted or failure reported
 - Full docs exist and are implementation-ready:
   - `docs/PRD.md`
   - `docs/TECHNICAL_PLAN.md`
