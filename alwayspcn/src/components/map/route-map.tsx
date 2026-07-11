@@ -34,6 +34,68 @@ function NavigationController({ position }: { position: [number, number] }) {
   return null;
 }
 
+/**
+ * Replaces Leaflet's built-in drag with a rotation-aware handler during
+ * navigation mode. The map container is CSS-rotated by -heading degrees, so
+ * raw screen-space drag deltas must be counter-rotated by +heading before
+ * being passed to Leaflet as a pan offset.
+ */
+function NavigationDragFix({ heading }: { heading: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.dragging.disable();
+
+    const θ = (heading * Math.PI) / 180;
+    const cosθ = Math.cos(θ);
+    const sinθ = Math.sin(θ);
+
+    let active = false;
+    let lastX = 0;
+    let lastY = 0;
+    const container = map.getContainer();
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
+      active = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      try { container.setPointerCapture(e.pointerId); } catch { /* best-effort */ }
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!active || !e.isPrimary) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      // Counter-rotate the delta to compensate for the CSS map rotation.
+      const rdx = dx * cosθ + dy * sinθ;
+      const rdy = -dx * sinθ + dy * cosθ;
+      map.panBy([-rdx, -rdy], { animate: false });
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.isPrimary) active = false;
+    };
+
+    container.addEventListener("pointerdown", onPointerDown);
+    container.addEventListener("pointermove", onPointerMove);
+    container.addEventListener("pointerup", onPointerUp);
+    container.addEventListener("pointercancel", onPointerUp);
+
+    return () => {
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("pointermove", onPointerMove);
+      container.removeEventListener("pointerup", onPointerUp);
+      container.removeEventListener("pointercancel", onPointerUp);
+      map.dragging.enable();
+    };
+  }, [map, heading]);
+
+  return null;
+}
+
 // Roads overlay colours (used for the network overlay GeoJSON layer)
 const ROAD_STYLE: Record<string, { color: string; weight: number; opacity: number }> = {
   motorway:      { color: "#e8003d", weight: 3, opacity: 0.7 },
@@ -138,7 +200,7 @@ export function RouteMap({
   navPosition = null,
   navHeading = null,
 }: RouteMapProps) {
-  const [mapStyle, setMapStyle] = useState<MapStyleKey>("street");
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>("map");
   const tileConfig = MAP_STYLES[mapStyle];
   // Group consecutive same-kind AND same-name segments into polylines
   type SegGroup = { kind: string; name: string; distanceMeters: number; positions: [number, number][] };
@@ -268,6 +330,11 @@ export function RouteMap({
         {/* Auto-pan to current position in navigation mode */}
         {navMode && navPosition && (
           <NavigationController position={navPosition} />
+        )}
+
+        {/* Counter-rotate drag deltas to match CSS map rotation */}
+        {navMode && navHeading !== null && (
+          <NavigationDragFix heading={navHeading} />
         )}
 
         {/* PCN + roads network overlay */}
