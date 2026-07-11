@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 
-const DATA_FILE = path.resolve(process.cwd(), "..", "data", "roads.json");
+const DATA_FILE = path.resolve(process.cwd(), "data", "roads.json");
 
 export async function GET() {
   if (!fs.existsSync(DATA_FILE)) {

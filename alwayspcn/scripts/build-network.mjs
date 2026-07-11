@@ -2,8 +2,8 @@ import { XMLParser } from "fast-xml-parser";
 import fs from "node:fs";
 import path from "node:path";
 
-const srcKml = path.resolve(process.cwd(), "..", "data", "doc.kml");
-const outDir = path.resolve(process.cwd(), "..", "data");
+const srcKml = path.resolve(process.cwd(), "data", "doc.kml");
+const outDir = path.resolve(process.cwd(), "data");
 const outFile = path.resolve(outDir, "network.json");
 
 const parser = new XMLParser({

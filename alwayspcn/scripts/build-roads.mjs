@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const outDir = path.resolve(process.cwd(), "..", "data");
+const outDir = path.resolve(process.cwd(), "data");
 const outFile = path.resolve(outDir, "roads.json");
 const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
