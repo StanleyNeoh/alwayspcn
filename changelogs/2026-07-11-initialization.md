@@ -21,6 +21,27 @@
 - `npm run lint` (pass)
 - `npm run build` (pass)
 
+---
+
+## Session 2 — Roads + Geocoding + PCN Overlay
+
+### Added
+- `alwayspcn/scripts/build-roads.mjs` — fetches Singapore road network from Overpass API, saves to `public/data/roads.json` with 24 h staleness cache. Non-fatal if Overpass is unreachable.
+- `alwayspcn/src/lib/geocode.ts` — Nominatim geocoding utility; resolves Singapore place names / addresses to `[lng, lat]`.
+- `alwayspcn/src/lib/graph-to-geojson.ts` — converts `GraphData` to GeoJSON FeatureCollection for PCN overlay.
+
+### Modified
+- `package.json` — added `build:roads` script; updated `predev` and `prebuild` to run it (with 24 h file cache so subsequent starts are instant).
+- `route-map.tsx` — added `roadsGeojson` and `pcnGeojson` props; renders OSM roads layer (highway-class colours) below PCN layer (kind colours) below active route.
+- `page.tsx` — added roads + PCN GeoJSON state; `loadGraph` now also fetches roads and builds PCN overlay; smart location input accepts `lat,lng` OR place name (geocoded via Nominatim); `Apply / Locate` button with loading spinner; map legend.
+
+### Validation Gate Evidence (session 2)
+- `npm run lint` — pass
+- `npx tsc --noEmit` — pass
+- `npm run build:network` — pass (39,407 nodes, 39,606 segments)
+- `npm run build:roads` — pass (83,576 road segments, 16 MB)
+- Dev server started; `/data/network.json` and `/data/roads.json` served correctly
+
 ## Security Review Gate Evidence
 - External security-focused review executed via subagent.
 - Findings: 2 low-severity hardening items (client-side compute DoS risk, runtime JSON schema validation gap).

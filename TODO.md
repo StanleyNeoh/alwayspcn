@@ -1,5 +1,14 @@
 # TODO
 
+## Completed (2026-07-11 session 2)
+- Singapore road network overlay from Overpass API (`build:roads` script)
+- PCN routes visual overlay extracted from graph and displayed on map
+- Geolocation: Nominatim geocoding for place-name start/end inputs
+- Dual-layer map: roads (OSM highway classification colours) + PCN routes (kind colours)
+- Map legend with colour key for roads and PCN route types
+- Loading states for road fetch and geocoding
+- Graceful degradation when roads.json not yet built
+
 ## In Progress
 - None
 
@@ -23,7 +32,6 @@
 
 ## Backlog
 - Populate `agent.env` with FIRECRAWL_API_KEY for Firecrawl MCP operations
-- Add geocoder integration for address search
 - Add alternate route suggestions
 - Add closure-aware routing from KML closure layer
 - Add mobile PWA offline support

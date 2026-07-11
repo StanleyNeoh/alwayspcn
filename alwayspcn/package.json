@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "build:network": "node scripts/build-network.mjs",
-    "predev": "npm run build:network",
-    "prebuild": "npm run build:network",
+    "build:roads": "node scripts/build-roads.mjs",
+    "predev": "npm run build:network && npm run build:roads",
+    "prebuild": "npm run build:network && npm run build:roads",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
