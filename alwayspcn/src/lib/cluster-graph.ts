@@ -1,4 +1,5 @@
 import type { GraphData, RoadsGeoJson } from "./routing";
+import { Quadtree } from "./quadtree";
 
 type Coord = [number, number];
 
@@ -25,51 +26,26 @@ function haversineMeters(a: Coord, b: Coord): number {
   return 6_371_000 * (2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
 }
 
-// ─── Spatial grid ─────────────────────────────────────────────────────────────
-
-function buildGrid(
-  coords: Coord[],
-  cellDegrees: number,
-): Map<string, number[]> {
-  const grid = new Map<string, number[]>();
-  for (let i = 0; i < coords.length; i++) {
-    const cx = Math.floor(coords[i][0] / cellDegrees);
-    const cy = Math.floor(coords[i][1] / cellDegrees);
-    const key = `${cx},${cy}`;
-    const cell = grid.get(key) ?? [];
-    cell.push(i);
-    grid.set(key, cell);
-  }
-  return grid;
-}
+// ─── Spatial index ───────────────────────────────────────────────────────────
 
 /**
  * Returns the indices of all coords within `thresholdMeters` of `centroid`.
- * Uses the pre-built grid to avoid O(n) scans; checks the 3×3 neighbourhood
- * of cells surrounding the centroid's cell.
+ * Converts the radius to a conservative lng/lat bounding box, queries the
+ * quadtree for candidates, then filters by exact haversine distance.
  */
 function getNeighbors(
   centroid: Coord,
   coords: Coord[],
-  grid: Map<string, number[]>,
-  cellDegrees: number,
+  qt: Quadtree,
   thresholdMeters: number,
 ): number[] {
-  const cx = Math.floor(centroid[0] / cellDegrees);
-  const cy = Math.floor(centroid[1] / cellDegrees);
-  const result: number[] = [];
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
-      const cell = grid.get(`${cx + dx},${cy + dy}`);
-      if (!cell) continue;
-      for (const idx of cell) {
-        if (haversineMeters(centroid, coords[idx]) <= thresholdMeters) {
-          result.push(idx);
-        }
-      }
-    }
-  }
-  return result;
+  const latDeg = thresholdMeters / 111_000;
+  const lngDeg = thresholdMeters / (111_000 * Math.cos(centroid[1] * Math.PI / 180));
+  const candidates = qt.queryBounds(
+    centroid[0] - lngDeg, centroid[1] - latDeg,
+    centroid[0] + lngDeg, centroid[1] + latDeg,
+  );
+  return candidates.filter(idx => haversineMeters(centroid, coords[idx]) <= thresholdMeters);
 }
 
 // ─── Iterative mean-shift clustering ─────────────────────────────────────────
@@ -97,10 +73,7 @@ function buildClusterMap(coords: Coord[], thresholdMeters: number): Coord[] {
   const n = coords.length;
   if (n === 0 || thresholdMeters <= 0) return coords.slice();
 
-  // 111 000 m ≈ 1 degree of latitude; used to size grid cells in degrees so
-  // one cell ≈ thresholdMeters in linear extent.
-  const cellDegrees = thresholdMeters / 111_000;
-  const grid = buildGrid(coords, cellDegrees);
+  const qt = new Quadtree(coords);
 
   const assignment = new Int32Array(n).fill(-1);
   const centroids: Coord[] = [];
@@ -112,7 +85,7 @@ function buildClusterMap(coords: Coord[], thresholdMeters: number): Coord[] {
     const members = new Set<number>();
 
     for (let iter = 0; iter < MAX_ITER; iter++) {
-      const nearby = getNeighbors(centroid, coords, grid, cellDegrees, thresholdMeters);
+      const nearby = getNeighbors(centroid, coords, qt, thresholdMeters);
       if (nearby.length === 0) break;
 
       // Accumulate – all vertices ever close to the centroid belong here.
@@ -275,12 +248,11 @@ export function buildMergedGraph(
   const pcnCentroidSet = new Set(pcnCI);
   const roadCentroidArr = [...new Set(roadCI)];
   const roadCentroidCoords = roadCentroidArr.map(i => centroidNodes[i]);
-  const bridgeCellDeg = MAX_BRIDGE_METERS / 111_000;
-  const bridgeGrid = buildGrid(roadCentroidCoords, bridgeCellDeg);
+  const bridgeQt = new Quadtree(roadCentroidCoords);
 
   for (const pci of pcnCentroidSet) {
     const pcnCoord = centroidNodes[pci];
-    const nearbyArr = getNeighbors(pcnCoord, roadCentroidCoords, bridgeGrid, bridgeCellDeg, MAX_BRIDGE_METERS);
+    const nearbyArr = getNeighbors(pcnCoord, roadCentroidCoords, bridgeQt, MAX_BRIDGE_METERS);
     for (const arrIdx of nearbyArr) {
       const rci = roadCentroidArr[arrIdx];
       if (pci === rci) continue;
