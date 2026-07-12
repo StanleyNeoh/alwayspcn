@@ -196,8 +196,8 @@ export function RoutePanel({
         serverRouting={serverRouting}
       />
 
-      {/* Legend (shown only when graph is loaded) */}
-      {activeGraph && <RouteLegend />}
+      {/* Legend */}
+      <RouteLegend />
     </div>
   );
 }
