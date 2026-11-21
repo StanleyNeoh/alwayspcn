@@ -4,6 +4,7 @@
 - None
 
 ## Completed (2026-11-21)
+- Replaced the rightmost Map view’s CARTO raster tiles with keyless OneMap GreyLite and verified Street fallback.
 - Switched Street to the canonical keyless OpenStreetMap endpoint and added basemap fallback and retry without losing the route.
 
 ## Completed (2026-07-11 session 5)

@@ -24,7 +24,7 @@ with the spatial data.
 
 ### 2.2 Background and Surface
 - Light mode only in v1.
-- Map basemap: OpenStreetMap light tiles (CartoDB light or standard OSM).
+- Basemaps: OneMap GreyLite (default for Singapore), standard OpenStreetMap street tiles, and Esri satellite imagery.
 - UI surfaces: off-white (`zinc-50` / `#fafafa`) with `zinc-100` borders.
 - Panel shadows: subtle (`shadow-sm` Tailwind), never dramatic.
 

@@ -2,7 +2,7 @@
 
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { Moon, Sun } from "lucide-react";
 import { CircleMarker, GeoJSON, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
@@ -151,7 +151,17 @@ function routeSegmentStyle(kind: string): RouteStyle {
 
 type MapStyleKey = "street" | "satellite" | "map";
 
-const MAP_STYLES: Record<MapStyleKey, { label: string; url: string; attribution: string; fallback: MapStyleKey }> = {
+// OneMap GreyLite TileJSON: https://www.onemap.gov.sg/docs/maps/greylite.html
+const ONE_MAP_BOUNDS = L.latLngBounds([1.16, 103.502], [1.56073, 104.11475]);
+const ONE_MAP_MIN_ZOOM = 11;
+
+const MAP_STYLES: Record<MapStyleKey, {
+  label: string;
+  url: string;
+  attribution: string;
+  fallback: MapStyleKey;
+  tileOptions?: L.TileLayerOptions;
+}> = {
   street: {
     label: "Street",
     url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -166,19 +176,41 @@ const MAP_STYLES: Record<MapStyleKey, { label: string; url: string; attribution:
   },
   map: {
     label: "Map",
-    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    url: "https://www.onemap.gov.sg/maps/tiles/GreyLite/{z}/{x}/{y}.png",
+    attribution: '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" width="20" height="20" alt="" />&nbsp;<a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a>&nbsp;&copy;&nbsp;contributors&nbsp;|&nbsp;<a href="https://www.sla.gov.sg/" target="_blank" rel="noopener noreferrer">Singapore Land Authority</a>',
     fallback: "street",
+    tileOptions: { bounds: ONE_MAP_BOUNDS, minNativeZoom: ONE_MAP_MIN_ZOOM, maxNativeZoom: 19 },
   },
 };
+
+type BasemapUnavailableReason = "tiles" | "coverage";
 
 type BasemapSelection = {
   style: MapStyleKey;
   attempt: number;
   status: "primary" | "fallback" | "unavailable";
+  reason?: BasemapUnavailableReason;
 };
 
-function BasemapTiles({ style, onUnavailable }: { style: MapStyleKey; onUnavailable: () => void }) {
+function BasemapTiles({
+  style,
+  onUnavailable,
+}: {
+  style: MapStyleKey;
+  onUnavailable: (reason: BasemapUnavailableReason) => void;
+}) {
+  const map = useMap();
+  const subscribeToViewport = useCallback((onChange: () => void) => {
+    map.on("moveend", onChange);
+    return () => { map.off("moveend", onChange); };
+  }, [map]);
+  const hasCoverage = useSyncExternalStore(subscribeToViewport, () => style !== "map" || (
+    map.getZoom() >= ONE_MAP_MIN_ZOOM && ONE_MAP_BOUNDS.contains(map.getCenter())
+  ));
+  useEffect(() => {
+    if (!hasCoverage) onUnavailable("coverage");
+  }, [hasCoverage, onUnavailable]);
+
   const firstBatch = useRef({ settled: false, loaded: false, failed: false });
   const eventHandlers = useMemo<L.LeafletEventHandlerFnMap>(() => ({
     tileload: () => { firstBatch.current.loaded = true; },
@@ -188,12 +220,14 @@ function BasemapTiles({ style, onUnavailable }: { style: MapStyleKey; onUnavaila
       if (batch.settled) return;
       batch.settled = true;
       // Leaflet fires `load` when all requests settle, even if every tile failed.
-      if (batch.failed && !batch.loaded) onUnavailable();
+      if (batch.failed && !batch.loaded) onUnavailable("tiles");
     },
   }), [onUnavailable]);
-  const { url, attribution } = MAP_STYLES[style];
+  const { url, attribution, tileOptions } = MAP_STYLES[style];
 
-  return <TileLayer url={url} attribution={attribution} eventHandlers={eventHandlers} />;
+  return hasCoverage
+    ? <TileLayer {...tileOptions} url={url} attribution={attribution} eventHandlers={eventHandlers} />
+    : null;
 }
 
 type RouteMapProps = {
@@ -235,11 +269,11 @@ export function RouteMap({
 }: RouteMapProps) {
   const [basemap, setBasemap] = useState<BasemapSelection>({ style: "map", attempt: 0, status: "primary" });
   const activeStyle = basemap.status === "primary" ? basemap.style : MAP_STYLES[basemap.style].fallback;
-  const handleBasemapUnavailable = useCallback(() => {
+  const handleBasemapUnavailable = useCallback((reason: BasemapUnavailableReason) => {
     setBasemap((current) => {
       // Ignore events from a layer the rider has already switched away from.
       if (current !== basemap || current.status === "unavailable") return current;
-      return { ...current, status: current.status === "primary" ? "fallback" : "unavailable" };
+      return { ...current, status: current.status === "primary" ? "fallback" : "unavailable", reason };
     });
   }, [basemap]);
 
@@ -252,7 +286,9 @@ export function RouteMap({
   const basemapNotice = basemap.status === "unavailable"
     ? "Basemap tiles couldn’t load. Select a map style to retry."
     : basemap.status === "fallback"
-      ? `${MAP_STYLES[basemap.style].label} tiles couldn’t load. Switched to ${MAP_STYLES[activeStyle].label}.`
+      ? basemap.reason === "coverage"
+        ? "Map covers Singapore at closer zoom levels. Switched to Street."
+        : `${MAP_STYLES[basemap.style].label} tiles couldn’t load. Switched to ${MAP_STYLES[activeStyle].label}.`
       : null;
 
   // Track an "unwrapped" continuous heading to avoid CSS 360° spin artifacts.

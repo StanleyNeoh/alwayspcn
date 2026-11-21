@@ -75,7 +75,7 @@ Full dark mode support for comfortable viewing in low-light conditions and reduc
 ### Map Rendering
 
 - **Leaflet** with **react-leaflet** — Industry-standard open-source mapping library
-- **OpenStreetMap tiles** — CartoDB light basemap with satellite option
+- **Basemap tiles** — OneMap GreyLite, OpenStreetMap, and Esri World Imagery
 - **GeoJSON overlays** — Dynamic rendering of road network and PCN infrastructure
 
 ### UI Components
@@ -156,8 +156,9 @@ Collapsible legend panel explaining all map color codes:
 
 ### 6. Multiple Map Styles
 
-- **Street View** — Clean CartoDB light tiles for clarity
-- **Satellite View** — Aerial imagery for context
+- **Map** — Light OneMap GreyLite basemap for Singapore
+- **Street** — Detailed OpenStreetMap basemap
+- **Satellite** — Esri aerial imagery for context
 - **Dark Mode** — Full interface theming for night use
 
 ### 7. Advanced Configuration
@@ -237,7 +238,7 @@ Build self-guided cycling or walking itineraries that showcase Singapore's green
 - **PCN Network Data** — Singapore NParks KML datasets
 - **Road Network** — OpenStreetMap via Overpass API
 - **Geocoding** — Nominatim OpenStreetMap service
-- **Basemap Tiles** — OpenStreetMap / CartoDB
+- **Basemap Tiles** — OneMap / OpenStreetMap / Esri World Imagery
 
 ---
 

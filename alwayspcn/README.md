@@ -23,11 +23,11 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Basemaps
 
-The top-right controls switch between **Street** (OpenStreetMap), **Satellite** (Esri World Imagery), and **Map** (CARTO, the default). The bundled tile URLs do not use an API key. The browser needs network access to the providers.
+The top-right controls switch between **Street** (OpenStreetMap), **Satellite** (Esri World Imagery), and **Map** ([OneMap GreyLite](https://www.onemap.gov.sg/docs/maps/greylite.html), the default). No tile API key needs to be configured in the app. The browser needs network access to the providers. Map covers Singapore; zooming out past level 11 or moving the map center outside coverage switches to Street. Center the map on Singapore, zoom in, then select Map again to restore it.
 
 If none of the first tiles for a style load, AlwaysPCN tries one alternate: Street and Satellite fall back to Map, and Map falls back to Street. Your route and markers stay in place. Select your preferred style again to retry it. If both providers fail, check your connection and select any style to retry.
 
-For deployments that use the public OpenStreetMap tile service, follow the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). Keep the provider attribution visible and allow the browser to send a `Referer` header. Public tiles are not an offline map or a guaranteed service.
+Follow the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and [OneMap Terms of Use](https://www.onemap.gov.sg/legal/termsofuse.html) when deploying. Keep the required attribution visible, including the OneMap logo, and allow the browser to send a `Referer` header. Public tiles are not an offline map or a guaranteed service.
 
 ## Scripts
 
