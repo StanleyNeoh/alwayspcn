@@ -3,6 +3,9 @@
 ## In Progress
 - None
 
+## Completed (2026-11-21)
+- Switched Street to the canonical keyless OpenStreetMap endpoint and added basemap fallback and retry without losing the route.
+
 ## Completed (2026-07-11 session 5)
 - Map style switcher: Street (OSM), Satellite (ESRI), Map (CartoDB Positron) — floating button group top-right of map
 
@@ -45,6 +48,8 @@
 - Hardened worker fallback to avoid large-graph main-thread freeze risk
 
 ## Backlog
+- Resolve existing React hook lint errors and investigate the Next.js dev-mode Google font compilation failure.
+- Review deployment exposure to the existing `npm audit --omit=dev` findings and update affected dependencies.
 - Populate `agent.env` with FIRECRAWL_API_KEY for Firecrawl MCP operations
 - Add alternate route suggestions (Epic B-5)
 - Add closure-aware routing from KML closure layer

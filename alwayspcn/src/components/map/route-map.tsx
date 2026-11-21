@@ -2,7 +2,7 @@
 
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Moon, Sun } from "lucide-react";
 import { CircleMarker, GeoJSON, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
@@ -151,23 +151,50 @@ function routeSegmentStyle(kind: string): RouteStyle {
 
 type MapStyleKey = "street" | "satellite" | "map";
 
-const MAP_STYLES: Record<MapStyleKey, { label: string; url: string; attribution: string }> = {
+const MAP_STYLES: Record<MapStyleKey, { label: string; url: string; attribution: string; fallback: MapStyleKey }> = {
   street: {
     label: "Street",
-    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    fallback: "map",
   },
   satellite: {
     label: "Satellite",
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     attribution: "Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, GIS User Community",
+    fallback: "map",
   },
   map: {
     label: "Map",
     url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    fallback: "street",
   },
 };
+
+type BasemapSelection = {
+  style: MapStyleKey;
+  attempt: number;
+  status: "primary" | "fallback" | "unavailable";
+};
+
+function BasemapTiles({ style, onUnavailable }: { style: MapStyleKey; onUnavailable: () => void }) {
+  const firstBatch = useRef({ settled: false, loaded: false, failed: false });
+  const eventHandlers = useMemo<L.LeafletEventHandlerFnMap>(() => ({
+    tileload: () => { firstBatch.current.loaded = true; },
+    tileerror: () => { firstBatch.current.failed = true; },
+    load: () => {
+      const batch = firstBatch.current;
+      if (batch.settled) return;
+      batch.settled = true;
+      // Leaflet fires `load` when all requests settle, even if every tile failed.
+      if (batch.failed && !batch.loaded) onUnavailable();
+    },
+  }), [onUnavailable]);
+  const { url, attribution } = MAP_STYLES[style];
+
+  return <TileLayer url={url} attribution={attribution} eventHandlers={eventHandlers} />;
+}
 
 type RouteMapProps = {
   segments: RouteSegment[];
@@ -206,8 +233,27 @@ export function RouteMap({
   navPosition = null,
   navHeading = null,
 }: RouteMapProps) {
-  const [mapStyle, setMapStyle] = useState<MapStyleKey>("map");
-  const tileConfig = MAP_STYLES[mapStyle];
+  const [basemap, setBasemap] = useState<BasemapSelection>({ style: "map", attempt: 0, status: "primary" });
+  const activeStyle = basemap.status === "primary" ? basemap.style : MAP_STYLES[basemap.style].fallback;
+  const handleBasemapUnavailable = useCallback(() => {
+    setBasemap((current) => {
+      // Ignore events from a layer the rider has already switched away from.
+      if (current !== basemap || current.status === "unavailable") return current;
+      return { ...current, status: current.status === "primary" ? "fallback" : "unavailable" };
+    });
+  }, [basemap]);
+
+  function selectMapStyle(style: MapStyleKey) {
+    setBasemap((current) => current.style === style && current.status === "primary"
+      ? current
+      : { style, attempt: current.attempt + 1, status: "primary" });
+  }
+
+  const basemapNotice = basemap.status === "unavailable"
+    ? "Basemap tiles couldn’t load. Select a map style to retry."
+    : basemap.status === "fallback"
+      ? `${MAP_STYLES[basemap.style].label} tiles couldn’t load. Switched to ${MAP_STYLES[activeStyle].label}.`
+      : null;
 
   // Track an "unwrapped" continuous heading to avoid CSS 360° spin artifacts.
   // Instead of jumping from 359° to 1° (which causes a full clockwise rotation),
@@ -304,9 +350,11 @@ export function RouteMap({
           {(Object.keys(MAP_STYLES) as MapStyleKey[]).map((key) => (
             <button
               key={key}
-              onClick={() => setMapStyle(key)}
+              type="button"
+              aria-pressed={basemap.style === key}
+              onClick={() => selectMapStyle(key)}
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                mapStyle === key
+                basemap.style === key
                   ? "bg-white text-gray-900 dark:bg-zinc-800 dark:text-gray-100"
                   : "bg-white/80 text-gray-500 hover:bg-white hover:text-gray-700 dark:bg-zinc-900/80 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
               }`}
@@ -315,6 +363,14 @@ export function RouteMap({
             </button>
           ))}
         </div>
+      </div>
+
+      <div role="status" className="pointer-events-none absolute bottom-8 left-3 z-[1000] max-w-[min(280px,calc(100%-72px))]">
+        {basemapNotice && (
+          <p className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 shadow-md dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+            {basemapNotice}
+          </p>
+        )}
       </div>
 
       {/* Navigation heading indicator overlay (compass rose) — not rotated with map */}
@@ -355,11 +411,13 @@ export function RouteMap({
         }}
       >
         <MapContainer center={[1.3521, 103.8198]} zoom={12} className="h-full w-full">
-          <TileLayer
-            key={mapStyle}
-            attribution={tileConfig.attribution}
-            url={tileConfig.url}
-          />
+          {basemap.status !== "unavailable" && (
+            <BasemapTiles
+              key={`${basemap.attempt}-${activeStyle}`}
+              style={activeStyle}
+              onUnavailable={handleBasemapUnavailable}
+            />
+          )}
         <ClickCapture onMapPick={onMapPick} />
 
         {/* Auto-pan to current position in navigation mode */}

@@ -21,6 +21,14 @@ Open [http://localhost:3000](http://localhost:3000).
 
 `roads.json` is cached for 24 hours; subsequent dev starts are fast.
 
+## Basemaps
+
+The top-right controls switch between **Street** (OpenStreetMap), **Satellite** (Esri World Imagery), and **Map** (CARTO, the default). The bundled tile URLs do not use an API key. The browser needs network access to the providers.
+
+If none of the first tiles for a style load, AlwaysPCN tries one alternate: Street and Satellite fall back to Map, and Map falls back to Street. Your route and markers stay in place. Select your preferred style again to retry it. If both providers fail, check your connection and select any style to retry.
+
+For deployments that use the public OpenStreetMap tile service, follow the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). Keep the provider attribution visible and allow the browser to send a `Referer` header. Public tiles are not an offline map or a guaranteed service.
+
 ## Scripts
 
 | Script | Description |
