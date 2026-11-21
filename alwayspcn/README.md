@@ -23,7 +23,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Basemaps
 
-The top-right controls switch between **Street** (OpenStreetMap), **Satellite** (Esri World Imagery), and **Map** ([OneMap GreyLite](https://www.onemap.gov.sg/docs/maps/greylite.html), the default). No tile API key needs to be configured in the app. The browser needs network access to the providers. Map covers Singapore; zooming out past level 11 or moving the map center outside coverage switches to Street. Center the map on Singapore, zoom in, then select Map again to restore it.
+The top-right controls switch between **Street** (OpenStreetMap, the default), **Satellite** (Esri World Imagery), and **Map** ([OneMap GreyLite](https://www.onemap.gov.sg/docs/maps/greylite.html)). The highlighted button shows which basemap is displayed, including after a fallback. No tile API key needs to be configured in the app. The browser needs network access to the providers. Map covers Singapore; zooming out past level 11 or moving the map center outside coverage switches to Street. Center the map on Singapore, zoom in, then select Map again to restore it.
 
 If none of the first tiles for a style load, AlwaysPCN tries one alternate: Street and Satellite fall back to Map, and Map falls back to Street. Your route and markers stay in place. Select your preferred style again to retry it. If both providers fail, check your connection and select any style to retry.
 

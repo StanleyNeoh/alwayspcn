@@ -24,7 +24,7 @@ with the spatial data.
 
 ### 2.2 Background and Surface
 - Light mode only in v1.
-- Basemaps: OneMap GreyLite (default for Singapore), standard OpenStreetMap street tiles, and Esri satellite imagery.
+- Basemaps: standard OpenStreetMap street tiles (default), Esri satellite imagery, and OneMap GreyLite for Singapore. The style switcher highlights the displayed layer, including after a fallback.
 - UI surfaces: off-white (`zinc-50` / `#fafafa`) with `zinc-100` borders.
 - Panel shadows: subtle (`shadow-sm` Tailwind), never dramatic.
 

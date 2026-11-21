@@ -267,8 +267,10 @@ export function RouteMap({
   navPosition = null,
   navHeading = null,
 }: RouteMapProps) {
-  const [basemap, setBasemap] = useState<BasemapSelection>({ style: "map", attempt: 0, status: "primary" });
-  const activeStyle = basemap.status === "primary" ? basemap.style : MAP_STYLES[basemap.style].fallback;
+  const [basemap, setBasemap] = useState<BasemapSelection>({ style: "street", attempt: 0, status: "primary" });
+  const activeStyle = basemap.status === "unavailable"
+    ? null
+    : basemap.status === "fallback" ? MAP_STYLES[basemap.style].fallback : basemap.style;
   const handleBasemapUnavailable = useCallback((reason: BasemapUnavailableReason) => {
     setBasemap((current) => {
       // Ignore events from a layer the rider has already switched away from.
@@ -283,7 +285,7 @@ export function RouteMap({
       : { style, attempt: current.attempt + 1, status: "primary" });
   }
 
-  const basemapNotice = basemap.status === "unavailable"
+  const basemapNotice = activeStyle === null
     ? "Basemap tiles couldn’t load. Select a map style to retry."
     : basemap.status === "fallback"
       ? basemap.reason === "coverage"
@@ -387,10 +389,10 @@ export function RouteMap({
             <button
               key={key}
               type="button"
-              aria-pressed={basemap.style === key}
+              aria-pressed={activeStyle === key}
               onClick={() => selectMapStyle(key)}
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                basemap.style === key
+                activeStyle === key
                   ? "bg-white text-gray-900 dark:bg-zinc-800 dark:text-gray-100"
                   : "bg-white/80 text-gray-500 hover:bg-white hover:text-gray-700 dark:bg-zinc-900/80 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
               }`}
@@ -447,7 +449,7 @@ export function RouteMap({
         }}
       >
         <MapContainer center={[1.3521, 103.8198]} zoom={12} className="h-full w-full">
-          {basemap.status !== "unavailable" && (
+          {activeStyle && (
             <BasemapTiles
               key={`${basemap.attempt}-${activeStyle}`}
               style={activeStyle}
